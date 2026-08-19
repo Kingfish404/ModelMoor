@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ModelMoor - Many APIs. One local endpoint.</title>
+  <meta name="description" content="ModelMoor brings remote APIs to your Mac, aggregates SSH-hosted and commercial models locally, and reverse-forwards the Unified API to remote servers." />
+  <link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
+  <meta property="og:title" content="ModelMoor - Many APIs. One local endpoint." />
+  <meta property="og:description" content="Bring remote APIs to your Mac, aggregate selected models locally, and make the Unified API available on a remote server." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="assets/icon.svg" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="nav">
+    <div class="wrap nav-inner">
+      <a class="brand" href="#top">
+        <img src="assets/icon.svg" alt="ModelMoor" />
+        ModelMoor
+      </a>
+      <nav class="nav-links">
+        <a href="#workflows">Workflows</a>
+        <a href="#features">Features</a>
+        <a href="#security">Security</a>
+        <a class="btn" href="https://github.com/Kingfish404/ModelMoor">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          GitHub
+        </a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="wrap">
+        <span class="kicker">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20M5 9l7-7 7 7"/></svg>
+          Native macOS | Menu bar + CLI
+        </span>
+        <h1>Many APIs.<br /><span class="accent">One local endpoint.</span></h1>
+        <blockquote class="hero-quote">
+          <p>“If there are several ways of doing the same thing, choose one.”</p>
+          <cite>RFC 1958, <em>Architectural Principles of the Internet</em> (1996)</cite>
+        </blockquote>
+        <p class="lead">
+          Bring private remote APIs to your Mac, combine them with commercial HTTPS models,
+          then reverse-forward the local Unified API to tools running on a remote server.
+        </p>
+        <div class="hero-actions">
+          <a class="btn" href="https://github.com/Kingfish404/ModelMoor">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            Get the source
+          </a>
+          <a class="btn ghost" href="#workflows">Explore the workflows</a>
+        </div>
+        <p class="hero-note">macOS 14 or later | Built on the system OpenSSH | MIT licensed</p>
+      </div>
+    </section>
+
+    <!-- Core workflows -->
+    <section id="workflows" class="alt">
+      <div class="wrap">
+        <p class="eyebrow">Three core workflows</p>
+        <h2>Move APIs across the SSH boundary in either direction.</h2>
+        <p class="section-lead">
+          Use each workflow independently, or combine all three so local and remote tools share the same selected models and stable aliases.
+        </p>
+        <div class="workflow-list">
+          <article class="workflow">
+            <div class="workflow-number">01</div>
+            <div class="workflow-copy">
+              <p class="workflow-kicker"><code>ssh -L</code> | Remote to local</p>
+              <h3>Bring a remote API to your Mac</h3>
+              <p>Turn a private vLLM, SGLang, Ollama, or other remote service into a stable Mac loopback endpoint. ModelMoor manages the SSH process, recovery, API health, and model discovery.</p>
+            </div>
+            <pre class="topology">Remote 127.0.0.1:8888
+          |
+          | SSH -L
+          v
+Mac    127.0.0.1:18888</pre>
+          </article>
+          <article class="workflow">
+            <div class="workflow-number">02</div>
+            <div class="workflow-copy">
+              <p class="workflow-kicker">Unified API | Local aggregation</p>
+              <h3>Combine remote and commercial models locally</h3>
+              <p>Collect selected SSH-hosted and direct HTTPS models behind one authenticated URL. Stable public model names route to exact upstream models with the correct Keychain credential.</p>
+            </div>
+            <pre class="topology">SSH endpoints ---+
+                 +--&gt; 127.0.0.1:17777/v1
+HTTPS providers -+</pre>
+          </article>
+          <article class="workflow">
+            <div class="workflow-number">03</div>
+            <div class="workflow-copy">
+              <p class="workflow-kicker"><code>ssh -R</code> | Local to remote</p>
+              <h3>Make the Unified API available on a remote server</h3>
+              <p>Carry the Mac's local Unified API back through SSH for remote development and compute tools. Both listeners stay on loopback, so the API is not exposed to the remote LAN or public internet.</p>
+            </div>
+            <pre class="topology">Mac    127.0.0.1:17777
+          |
+          | SSH -R
+          v
+Remote 127.0.0.1:17777</pre>
+          </article>
+        </div>
+        <div class="reverse-command">
+          <div>
+            <p class="code-label">Reverse-forward the Unified API</p>
+            <p>Run this on the Mac, then point a client on <code>my-ssh-host</code> to <code>http://127.0.0.1:17777/v1</code> with an enabled ModelMoor Unified API key.</p>
+          </div>
+          <pre><span class="p">modelmoor</span> add remote-unified-api my-ssh-host \
+  --direction remote \
+  --listen-port 17777 \
+  --destination-port 17777</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features">
+      <div class="wrap">
+        <p class="eyebrow">Features</p>
+        <h2>Many sources, one client configuration.</h2>
+        <p class="section-lead">
+          Keep SSH forwarding as transport, store each commercial key separately in Keychain,
+          and route every selected model through <code>127.0.0.1:17777/v1</code>.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <div class="ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+            </div>
+            <h3>SSH config discovery</h3>
+            <p>Finds targets from <code>~/.ssh/config</code> and its recursive <code>Include</code> files.</p>
+          </div>
+          <div class="card">
+            <div class="ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v4a4 4 0 0 0 4 4 4 4 0 0 0 4-4V3M8 21v-4a4 4 0 0 0-4-4M16 21v-4a4 4 0 0 1 4-4"/></svg>
+            </div>
+            <h3>Local &amp; remote ports</h3>
+            <p>Forward in either direction: <code>-L</code> to reach a remote API, or <code>-R</code> to expose a local one.</p>
+          </div>
+          <div class="card">
+            <div class="ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.5"/><path d="M21 3v6h-6"/></svg>
+            </div>
+            <h3>Auto-reconnecting</h3>
+            <p>One resilient SSH process per Mooring keeps every mapping alive and re-establishes on drop.</p>
+          </div>
+          <div class="card">
+            <div class="ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
+            </div>
+            <h3>Independent endpoints</h3>
+            <p>Inspect tunneled APIs, direct HTTPS providers such as DeepSeek, and Ollama without coupling API health to SSH state.</p>
+          </div>
+          <div class="card">
+            <div class="ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 9h6M7 13h4"/></svg>
+            </div>
+            <h3>Local Gateway</h3>
+            <p>Expose stable model aliases through one authenticated OpenAI-compatible URL, including transparent SSE streaming.</p>
+          </div>
+          <div class="card">
+            <div class="ico">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3Z"/></svg>
+            </div>
+            <h3>Keychain-safe</h3>
+            <p>API tokens are stored only in the current user's macOS Keychain, never in plain config.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section id="how" class="alt">
+      <div class="wrap split">
+        <div>
+          <p class="eyebrow">How it works</p>
+          <h2>From many endpoints to one local API.</h2>
+          <ol class="steps">
+            <li>
+              <span class="n">1</span>
+              <div><b>Add endpoints in the app</b><span>Use the GUI to add an SSH mapping or a direct HTTPS provider. The CLI remains available for automation.</span></div>
+            </li>
+            <li>
+              <span class="n">2</span>
+              <div><b>Discover models</b><span>Inspect each API independently and choose the models you want to expose.</span></div>
+            </li>
+            <li>
+              <span class="n">3</span>
+              <div><b>Create aliases</b><span>Map stable public model names to exact upstream models without fallback or retries.</span></div>
+            </li>
+            <li>
+              <span class="n">4</span>
+              <div><b>Connect your client</b><span>Use <code>http://127.0.0.1:17777/v1</code> and an enabled Unified API key, or explicitly turn authentication off.</span></div>
+            </li>
+          </ol>
+        </div>
+        <div class="how-demo">
+          <p class="code-label">GUI</p>
+          <pre class="ascii-ui" aria-label="ASCII diagram of the ModelMoor interface">+--------------------------------------+
+| ModelMoor                       [--] |
++-------------+------------------------+
+| Overview    | Endpoints              |
+| Endpoints &gt; |                        |
+| Unified API |  + Add Endpoint        |
+| Usage       |                        |
+| Settings    |  SSH        HTTPS      |
+|             |  host       provider   |
+|             |  port       API key    |
+|             |                        |
+|             |  [Inspect Models]      |
+|             |  [Add to Unified API]  |
++-------------+------------------------+</pre>
+          <p class="code-label">CLI</p>
+          <pre><span class="c"># Create a default -L mapping</span>
+<span class="p">modelmoor</span> init localhost \
+  --name dgx-spark \
+  --direction local \
+  --listen-port 18888 \
+  --destination-port 8888 \
+  --probe-path /v1/models
+
+<span class="c"># Copy the unified client settings</span>
+<span class="p">modelmoor</span> gateway url
+<span class="p">modelmoor</span> gateway token --copy</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Security -->
+    <section id="security" class="alt">
+      <div class="wrap">
+        <p class="eyebrow">Security boundaries</p>
+        <h2>Deliberately conservative.</h2>
+        <p class="section-lead">ModelMoor leans on the system OpenSSH and keeps the attack surface small by design.</p>
+        <ul class="sec-list">
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            Passwords, keys, ProxyJump, and the agent are handled by the system OpenSSH.
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            <code>BatchMode=yes</code> stops background connections from prompting for a password.
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            Listener addresses only accept <code>127.0.0.1</code> or <code>localhost</code>.
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            <code>-R 0.0.0.0:...</code> and GatewayPorts are not supported, to avoid exposing local services.
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            Endpoint credentials and all Unified API key values live only in the current user's macOS Keychain.
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            The Unified API binds only loopback. Multi-key bearer authentication is on by default, can be disabled explicitly, and client credentials are stripped before routing.
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- Requirements -->
+    <section id="requirements">
+      <div class="wrap">
+        <p class="eyebrow">Requirements</p>
+        <h2>What you need.</h2>
+        <div class="req">
+          <span class="chip">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20M2 12h20"/></svg>
+            macOS 14 or later
+          </span>
+          <span class="chip">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 20h8"/></svg>
+            Xcode 26 / Swift 6.1+ (to build)
+          </span>
+          <span class="chip">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+            System OpenSSH client
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="cta">
+      <div class="wrap">
+        <h2>Ready to moor?</h2>
+        <p>Clone the repo, build the app, and start mapping ports in minutes.</p>
+        <div class="hero-actions" style="justify-content:center;">
+          <a class="btn" href="https://github.com/Kingfish404/ModelMoor">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+            View on GitHub
+          </a>
+          <a class="btn ghost" href="development.md">Development docs</a>
+          <a class="btn ghost" href="dgx-spark-copilot.en.md">DGX Spark -> Copilot guide</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <a class="brand" href="#top">
+        <img src="assets/icon.svg" alt="ModelMoor" />
+        ModelMoor
+      </a>
+      <div class="meta">
+        <a href="https://github.com/Kingfish404/ModelMoor">GitHub</a>
+        <a href="development.md">Development</a>
+        <a href="dgx-spark-copilot.en.md">DGX Spark -> Copilot</a>
+        <span>MIT License</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
