@@ -1,0 +1,24 @@
+# Build artifacts
+.build/
+.swiftpm/
+
+docs/PLAN.md
+
+# Scratch / output directories
+outputs/
+work/
+
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+*.xcuserstate
+*.xcscpt
+*.xccheckout
+DerivedData/
+
+# Generated app-icon rasters (source: Resources/Brand/ModelMoor-AppIcon-Master.svg)
+Resources/Brand/ModelMoor-AppIcon-Master.png
+Resources/Brand/ModelMoor-AppIcon-1024.png
+Resources/Assets.xcassets/AppIcon.appiconset/*.png

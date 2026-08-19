@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish macOS release
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install icon renderer
+        run: brew install librsvg
+
+      - name: Run tests
+        run: make test
+
+      - name: Build app bundle
+        run: make app
+
+      - name: Package release archive
+        run: ditto -c -k --sequesterRsrc --keepParent .build/app/ModelMoor.app "ModelMoor-${GITHUB_REF_NAME}-macos.zip"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModelMoor-${{ github.ref_name }}-macos
+          path: ModelMoor-${{ github.ref_name }}-macos.zip
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "ModelMoor-${GITHUB_REF_NAME}-macos.zip" --generate-notes --title "ModelMoor $GITHUB_REF_NAME"

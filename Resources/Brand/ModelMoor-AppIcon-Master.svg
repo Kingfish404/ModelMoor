@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#FAFAFB"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1268FF"/>
+      <stop offset="0.55" stop-color="#0757F5"/>
+      <stop offset="1" stop-color="#0649D9"/>
+    </linearGradient>
+    <linearGradient id="blueTop" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#1670FF"/>
+      <stop offset="0.62" stop-color="#0758F4"/>
+      <stop offset="1" stop-color="#0648D5"/>
+    </linearGradient>
+    <filter id="foldShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="9"/>
+    </filter>
+  </defs>
+
+  <rect x="40" y="40" width="944" height="944" rx="216" fill="url(#tile)"/>
+
+  <g>
+    <path d="M278 316 L278 687" fill="none" stroke="#0757F5" stroke-width="132" stroke-linecap="round"/>
+    <path d="M746 316 L746 687" fill="none" stroke="#0757F5" stroke-width="132" stroke-linecap="round"/>
+
+    <circle cx="278" cy="719" r="86" fill="url(#blue)"/>
+    <circle cx="746" cy="719" r="86" fill="url(#blue)"/>
+    <circle cx="278" cy="719" r="39" fill="#FBFBFC"/>
+    <circle cx="746" cy="719" r="39" fill="#FBFBFC"/>
+
+    <path d="M278 316 L512 560" fill="none" stroke="#003AB4" stroke-opacity="0.24" stroke-width="142" stroke-linecap="round" transform="translate(7 9)" filter="url(#foldShadow)"/>
+    <path d="M278 316 L512 560" fill="none" stroke="url(#blueTop)" stroke-width="132" stroke-linecap="round"/>
+
+    <path d="M512 560 L746 316" fill="none" stroke="#0039AE" stroke-opacity="0.3" stroke-width="142" stroke-linecap="round" transform="translate(7 10)" filter="url(#foldShadow)"/>
+    <path d="M512 560 L746 316" fill="none" stroke="url(#blueTop)" stroke-width="132" stroke-linecap="round"/>
+  </g>
+</svg>
