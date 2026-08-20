@@ -16,7 +16,7 @@ public final class NetworkMonitor: @unchecked Sendable {
     private var started = false
 
     public init(
-        queue: DispatchQueue = DispatchQueue(label: "dev.modelmoor.network-monitor", qos: .utility),
+        queue: DispatchQueue = DispatchQueue(label: "com.modelmoor.network-monitor", qos: .utility),
         handler: @escaping Handler
     ) {
         self.monitor = NWPathMonitor()

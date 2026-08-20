@@ -177,12 +177,13 @@ public struct TunnelConfiguration: Codable, Equatable, Identifiable, Sendable {
 }
 
 public struct ModelMoorConfiguration: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
     public var schemaVersion: Int
     public var tunnels: [TunnelConfiguration]
     public var endpoints: [APIEndpointConfiguration]
     public var routes: [ModelRouteConfiguration]
     public var gateway: GatewayConfiguration
+    public var cliProxy: CLIProxyConfiguration
     public var hasPreparedRecommendedEndpoints: Bool
 
     public init(
@@ -191,6 +192,7 @@ public struct ModelMoorConfiguration: Codable, Equatable, Sendable {
         endpoints: [APIEndpointConfiguration] = [],
         routes: [ModelRouteConfiguration] = [],
         gateway: GatewayConfiguration = GatewayConfiguration(),
+        cliProxy: CLIProxyConfiguration = CLIProxyConfiguration(),
         hasPreparedRecommendedEndpoints: Bool = true
     ) {
         self.schemaVersion = schemaVersion
@@ -198,11 +200,12 @@ public struct ModelMoorConfiguration: Codable, Equatable, Sendable {
         self.endpoints = endpoints
         self.routes = routes
         self.gateway = gateway
+        self.cliProxy = cliProxy
         self.hasPreparedRecommendedEndpoints = hasPreparedRecommendedEndpoints
     }
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, tunnels, endpoints, routes, gateway, hasPreparedRecommendedEndpoints
+        case schemaVersion, tunnels, endpoints, routes, gateway, cliProxy, hasPreparedRecommendedEndpoints
     }
 
     public init(from decoder: Decoder) throws {
@@ -212,6 +215,7 @@ public struct ModelMoorConfiguration: Codable, Equatable, Sendable {
         endpoints = try container.decodeIfPresent([APIEndpointConfiguration].self, forKey: .endpoints) ?? []
         routes = try container.decodeIfPresent([ModelRouteConfiguration].self, forKey: .routes) ?? []
         gateway = try container.decodeIfPresent(GatewayConfiguration.self, forKey: .gateway) ?? GatewayConfiguration()
+        cliProxy = try container.decodeIfPresent(CLIProxyConfiguration.self, forKey: .cliProxy) ?? CLIProxyConfiguration()
         hasPreparedRecommendedEndpoints = try container.decodeIfPresent(
             Bool.self,
             forKey: .hasPreparedRecommendedEndpoints
@@ -276,6 +280,27 @@ public struct ModelMoorConfiguration: Codable, Equatable, Sendable {
             }
         }
         _ = try gateway.validated()
+        _ = try cliProxy.validated()
+        if cliProxy.enabled {
+            guard gateway.listenPort != cliProxy.listenPort else {
+                throw ConfigurationError.invalidValue("Unified API and subscription proxy cannot use the same port.")
+            }
+            guard let endpoint = endpoints.first(where: { $0.id == cliProxy.endpointID }),
+                  case let .managedCLIProxy(originURL) = endpoint.source,
+                  originURL.port == cliProxy.listenPort,
+                  endpoint.enabled,
+                  endpoint.kind == .openAICompatible,
+                  endpoint.authentication == .bearer else {
+                throw ConfigurationError.invalidValue("The managed subscription endpoint is missing or inconsistent.")
+            }
+            for tunnel in tunnels {
+                guard !tunnel.enabledMappings.contains(where: {
+                    $0.direction.listensLocally && $0.listenPort == cliProxy.listenPort
+                }) else {
+                    throw ConfigurationError.invalidValue("Subscription proxy port conflicts with an SSH listener.")
+                }
+            }
+        }
         return self
     }
 }

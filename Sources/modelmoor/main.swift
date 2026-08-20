@@ -17,7 +17,10 @@ struct ModelMoorCLI {
     private static func run(arguments: [String]) async throws {
         let command = arguments.first ?? "help"
         let parsed = try Arguments(Array(arguments.dropFirst()))
-        let store = ConfigurationStore()
+        let store = ConfigurationStore(
+            fileURL: ConfigurationStore.defaultURL(),
+            legacyImportURL: ConfigurationStore.defaultLegacyImportURL()
+        )
 
         switch command {
         case "help", "--help", "-h":

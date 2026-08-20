@@ -81,10 +81,37 @@ public struct GatewaySnapshot: Sendable {
 public struct GatewayRequestRouter: Sendable {
     public static let maximumBodyBytes = 16 * 1_024 * 1_024
 
-    public var snapshot: GatewaySnapshot
+    public var snapshot: GatewaySnapshot {
+        didSet { rebuildIndexes() }
+    }
+    private var routesByPublicModel: [String: ModelRouteConfiguration]
+    private var endpointsByID: [UUID: APIEndpointConfiguration]
+    private var mappingsByID: [UUID: PortMappingConfiguration]
 
     public init(snapshot: GatewaySnapshot) {
         self.snapshot = snapshot
+        self.routesByPublicModel = [:]
+        self.endpointsByID = [:]
+        self.mappingsByID = [:]
+        rebuildIndexes()
+    }
+
+    private mutating func rebuildIndexes() {
+        var routesByPublicModel: [String: ModelRouteConfiguration] = [:]
+        for route in snapshot.configuration.routes where route.enabled {
+            routesByPublicModel[route.publicModel] = routesByPublicModel[route.publicModel] ?? route
+        }
+        self.routesByPublicModel = routesByPublicModel
+        var endpointsByID: [UUID: APIEndpointConfiguration] = [:]
+        for endpoint in snapshot.configuration.endpoints {
+            endpointsByID[endpoint.id] = endpointsByID[endpoint.id] ?? endpoint
+        }
+        self.endpointsByID = endpointsByID
+        var mappingsByID: [UUID: PortMappingConfiguration] = [:]
+        for mapping in snapshot.configuration.tunnels.flatMap(\.mappings) {
+            mappingsByID[mapping.id] = mappingsByID[mapping.id] ?? mapping
+        }
+        self.mappingsByID = mappingsByID
     }
 
     public func route(_ request: GatewayRequest) -> GatewayRouteDecision {
@@ -124,12 +151,12 @@ public struct GatewayRequestRouter: Sendable {
         guard let publicModel = object["model"] as? String, !publicModel.isEmpty else {
             return .local(error(status: 400, code: "missing_model", message: "Request body must contain a top-level model string."))
         }
-        guard let route = snapshot.configuration.routes.first(where: { $0.enabled && $0.publicModel == publicModel }) else {
+        guard let route = routesByPublicModel[publicModel] else {
             return .local(error(status: 404, code: "model_not_found", message: "No enabled route exists for model \(publicModel)."))
         }
-        guard let endpoint = snapshot.configuration.endpoints.first(where: {
-            $0.id == route.endpointID && $0.enabled && $0.kind == .openAICompatible
-        }) else {
+        guard let endpoint = endpointsByID[route.endpointID],
+              endpoint.enabled,
+              endpoint.kind == .openAICompatible else {
             return .local(error(status: 503, code: "endpoint_unavailable", message: "The selected endpoint is unavailable."))
         }
         if case let .sshMapping(mappingID, _) = endpoint.source,
@@ -149,14 +176,12 @@ public struct GatewayRequestRouter: Sendable {
             return .local(self.error(status: 400, code: "invalid_json", message: "Request body could not be rewritten."))
         }
 
-        let mappings = Dictionary(uniqueKeysWithValues: snapshot.configuration.tunnels
-            .flatMap(\.mappings).map { ($0.id, $0) })
         let suffix = String(pathAndQuery.path.dropFirst("/v1".count))
         let upstreamPath = joinedPath(endpoint.basePath, suffix)
         let upstreamURL: URL
         do {
             var components = URLComponents(
-                url: try EndpointURLResolver.resolve(endpoint, path: upstreamPath, mappings: mappings),
+                url: try EndpointURLResolver.resolve(endpoint, path: upstreamPath, mappings: mappingsByID),
                 resolvingAgainstBaseURL: false
             )
             components?.percentEncodedQuery = pathAndQuery.query
@@ -203,8 +228,7 @@ public struct GatewayRequestRouter: Sendable {
     }
 
     private func modelsResponse() -> GatewayLocalResponse {
-        let models = snapshot.configuration.routes
-            .filter(\.enabled)
+        let models = routesByPublicModel.values
             .map { ["id": $0.publicModel, "object": "model", "owned_by": "modelmoor"] }
             .sorted { ($0["id"] ?? "") < ($1["id"] ?? "") }
         let body = (try? JSONSerialization.data(withJSONObject: ["object": "list", "data": models])) ?? Data("{\"object\":\"list\",\"data\":[]}".utf8)

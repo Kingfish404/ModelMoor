@@ -5,32 +5,57 @@ public actor ConfigurationStore {
     public typealias EndpointCredentialLookup = @Sendable (UUID) throws -> String?
 
     public let fileURL: URL
+    public let legacyImportURL: URL?
     private let endpointCredentialLookup: EndpointCredentialLookup
+    private let initialConfiguration: ModelMoorConfiguration
 
     public init(
         fileURL: URL = ConfigurationStore.defaultURL(),
+        legacyImportURL: URL? = nil,
+        initialConfiguration: ModelMoorConfiguration = ModelMoorConfiguration(
+            hasPreparedRecommendedEndpoints: false
+        ),
         endpointCredentialLookup: @escaping EndpointCredentialLookup = {
             try KeychainTokenStore().token(for: $0)
         }
     ) {
         self.fileURL = fileURL
+        self.legacyImportURL = legacyImportURL
+        self.initialConfiguration = initialConfiguration
         self.endpointCredentialLookup = endpointCredentialLookup
     }
 
-    public static func defaultURL(environment: [String: String] = ProcessInfo.processInfo.environment) -> URL {
-        if let override = environment["MODELMOOR_CONFIG"], !override.isEmpty {
-            return URL(fileURLWithPath: NSString(string: override).expandingTildeInPath)
+    public static func defaultURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> URL {
+        if let override = ModelMoorRuntimeProfile.configurationOverrideURL(environment: environment) {
+            return override
         }
-        return FileManager.default.homeDirectoryForCurrentUser
+        return ModelMoorRuntimeProfile.configurationHome(
+            environment: environment,
+            homeDirectory: homeDirectory
+        )
+        .appendingPathComponent("modelmoor", isDirectory: true)
+        .appendingPathComponent("config.json")
+    }
+
+    public static func defaultLegacyImportURL(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> URL? {
+        guard ModelMoorRuntimeProfile.configurationOverrideURL(environment: environment) == nil else {
+            return nil
+        }
+        return homeDirectory
             .appendingPathComponent("Library/Application Support/ModelMoor", isDirectory: true)
             .appendingPathComponent("config.json")
     }
 
     public func load() throws -> ModelMoorConfiguration {
+        try importLegacyConfigurationIfNeeded()
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            let initial = preparedRecommendedEndpoints(in: ModelMoorConfiguration(
-                hasPreparedRecommendedEndpoints: false
-            ))
+            let initial = preparedRecommendedEndpoints(in: initialConfiguration)
             try prepareDirectory()
             try persist(initial)
             return initial
@@ -51,6 +76,8 @@ public actor ConfigurationStore {
             } catch {
                 throw ConfigurationError.unreadable("Could not decode configuration: \(error.localizedDescription)")
             }
+        case 2:
+            return try migrateV2(data)
         case 1:
             return try migrateV1(data)
         default:
@@ -65,7 +92,9 @@ public actor ConfigurationStore {
         if FileManager.default.fileExists(atPath: fileURL.path) {
             let existing = try readConfigurationData()
             let schema = try decodeSchema(from: existing)
-            if schema == 1 {
+            if schema == 2 {
+                _ = try migrateV2(existing)
+            } else if schema == 1 {
                 _ = try migrateV1(existing)
             } else if schema != ModelMoorConfiguration.currentSchemaVersion {
                 throw ConfigurationError.unsupportedSchema(schema)
@@ -77,6 +106,39 @@ public actor ConfigurationStore {
     private var v1BackupURL: URL {
         fileURL.deletingLastPathComponent()
             .appendingPathComponent("\(fileURL.lastPathComponent).v1.backup")
+    }
+
+    private func importLegacyConfigurationIfNeeded() throws {
+        guard !FileManager.default.fileExists(atPath: fileURL.path),
+              let legacyImportURL,
+              legacyImportURL.standardizedFileURL != fileURL.standardizedFileURL,
+              FileManager.default.fileExists(atPath: legacyImportURL.path) else { return }
+        let legacyData: Data
+        do {
+            legacyData = try Data(contentsOf: legacyImportURL, options: [.mappedIfSafe])
+        } catch {
+            throw ConfigurationError.unreadable(
+                "Could not import the legacy configuration: \(error.localizedDescription)"
+            )
+        }
+        try prepareDirectory()
+        try DurableAtomicWriter.write(legacyData, to: fileURL, replacing: false)
+    }
+
+    private var v2BackupURL: URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent("\(fileURL.lastPathComponent).v2.backup")
+    }
+
+    private func migrateV2(_ data: Data) throws -> ModelMoorConfiguration {
+        let migrated = try ConfigurationMigration.migrateV2(data)
+        let prepared = preparedRecommendedEndpoints(in: migrated)
+        try prepareDirectory()
+        if !FileManager.default.fileExists(atPath: v2BackupURL.path) {
+            try DurableAtomicWriter.write(data, to: v2BackupURL, replacing: false)
+        }
+        try persist(prepared)
+        return prepared
     }
 
     private func migrateV1(_ data: Data) throws -> ModelMoorConfiguration {

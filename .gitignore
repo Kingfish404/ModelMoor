@@ -7,6 +7,8 @@ docs/PLAN.md
 # Scratch / output directories
 outputs/
 work/
+tmp
+*.tmp
 
 # macOS
 .DS_Store

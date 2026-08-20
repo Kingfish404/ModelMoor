@@ -24,6 +24,7 @@ final class UpdateController: ObservableObject {
     @Published private(set) var lastCheckedAt: Date?
 
     let currentVersion: String
+    let updatesAvailable: Bool
 
     private static let automaticChecksKey = "softwareUpdates.automaticChecksEnabled"
     private static let lastCheckedAtKey = "softwareUpdates.lastCheckedAt"
@@ -37,13 +38,17 @@ final class UpdateController: ObservableObject {
     init(
         bundle: Bundle = .main,
         defaults: UserDefaults = .standard,
+        updatesAvailable: Bool = true,
         checker: (any AppReleaseChecking)? = nil
     ) {
         let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
         currentVersion = version
         currentAppVersion = AppVersion(version) ?? AppVersion("0.0.0")!
+        self.updatesAvailable = updatesAvailable
         self.defaults = defaults
-        if defaults.object(forKey: Self.automaticChecksKey) == nil {
+        if !updatesAvailable {
+            automaticChecksEnabled = false
+        } else if defaults.object(forKey: Self.automaticChecksKey) == nil {
             automaticChecksEnabled = true
         } else {
             automaticChecksEnabled = defaults.bool(forKey: Self.automaticChecksKey)
@@ -67,7 +72,8 @@ final class UpdateController: ObservableObject {
     }
 
     var statusText: String {
-        switch state {
+        if !updatesAvailable { return "Update checks are disabled for development builds." }
+        return switch state {
         case .idle:
             lastCheckedAt == nil ? "Updates have not been checked yet." : "No new update was found last time."
         case .checking:
@@ -82,13 +88,17 @@ final class UpdateController: ObservableObject {
     }
 
     func setAutomaticChecksEnabled(_ enabled: Bool) {
+        guard updatesAvailable else {
+            automaticChecksEnabled = false
+            return
+        }
         automaticChecksEnabled = enabled
         defaults.set(enabled, forKey: Self.automaticChecksKey)
         if enabled { start() } else { stop() }
     }
 
     func start() {
-        guard automaticChecksEnabled, automaticCheckTask == nil else { return }
+        guard updatesAvailable, automaticChecksEnabled, automaticCheckTask == nil else { return }
         automaticCheckTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(8))
             while !Task.isCancelled {
@@ -109,6 +119,11 @@ final class UpdateController: ObservableObject {
     }
 
     func checkNow() async -> CheckOutcome {
+        guard updatesAvailable else {
+            let message = "Update checks are disabled for development builds."
+            state = .failed(message)
+            return .failed(message)
+        }
         guard !isChecking else { return .alreadyChecking }
         state = .checking
 

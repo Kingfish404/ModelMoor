@@ -7,35 +7,53 @@ import SwiftUI
 
 @MainActor
 final class AppModel: ObservableObject {
+    private static let endpointInspectionConcurrency = 4
+
     @Published var configuration = ModelMoorConfiguration()
     @Published var statuses: [UUID: TunnelStatus] = [:]
     @Published var inspections: [UUID: EndpointInspection] = [:]
     @Published var inspectingEndpointIDs: Set<UUID> = []
     @Published var gatewayState: GatewayServiceState = .stopped
+    @Published var cliProxyState: CLIProxyRuntimeState = .stopped
+    @Published private(set) var subscriptionAccounts: [CLIProxyAccount] = []
+    @Published private(set) var activeSubscriptionLogin: CLIProxyLoginSession?
+    @Published private(set) var activeSubscriptionProvider: CLIProxyLoginProvider?
+    @Published private(set) var isRefreshingSubscriptionAccounts = false
+    @Published private(set) var updatingSubscriptionAccountIDs: Set<String> = []
+    @Published private(set) var subscriptionUsage: [String: SubscriptionUsageSnapshot] = [:]
+    @Published private(set) var isRefreshingSubscriptionUsage = false
     @Published private(set) var tokenUsage = TokenUsageSnapshot.zero
     @Published var selectedTunnelID: UUID?
     @Published var selectedEndpointID: UUID?
     @Published var errorMessage: String?
     @Published var isLoaded = false
-    @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
+    @Published var launchAtLogin: Bool
     @Published var sshTargets: [SSHHostTarget] = []
     @Published var isRefreshingSSHTargets = false
     @Published var lastSavedAt: Date?
     @Published var navigationRequest: NavigationSelection?
     @Published var addEndpointRequest = 0
     @Published var addSSHConnectionRequest = 0
+    @Published var preferredModelEndpointID: UUID?
     @Published private(set) var isUpdatingGatewayAccess = false
     @Published private(set) var isUIRefreshActive = false
 
     private let store: ConfigurationStore
+    let runtimeProfile: ModelMoorRuntimeProfile
     private let inspector: any APIInspecting
     private let tokenStore: KeychainTokenStore
     private let backgroundTokenStore: KeychainTokenStore
     private let deletionCoordinator: ConfigurationDeletionCoordinator
     private let tokenUsageStore: TokenUsageStore
+    private let codexBarUsageService: CodexBarUsageService
     private let diagnosticLog = DiagnosticLog()
     private var service: TunnelService?
     private var gatewayService: GatewayService?
+    private var cliProxyService: CLIProxyService?
+    private var subscriptionLoginTask: Task<Void, Never>?
+    private var cliProxyRestartTask: Task<Void, Never>?
+    private var cliProxyStabilityTask: Task<Void, Never>?
+    private var cliProxyRestartAttempt = 0
     private var runtimeOwnership: RuntimeOwnership?
     private var requestedTunnelIDs: Set<UUID> = []
     private var networkMonitor: NetworkMonitor?
@@ -46,17 +64,37 @@ final class AppModel: ObservableObject {
     private var tokenAvailability: [UUID: Bool] = [:]
 
     init(
-        store: ConfigurationStore = ConfigurationStore(),
+        runtimeProfile: ModelMoorRuntimeProfile = .current,
+        store: ConfigurationStore? = nil,
         inspector: any APIInspecting = APIInspector(),
-        tokenStore: KeychainTokenStore = KeychainTokenStore(),
-        tokenUsageStore: TokenUsageStore = TokenUsageStore()
+        tokenStore: KeychainTokenStore? = nil,
+        tokenUsageStore: TokenUsageStore? = nil
     ) {
-        self.store = store
+        let resolvedTokenStore = tokenStore ?? KeychainTokenStore(
+            service: runtimeProfile.keychainService,
+            fallbackServices: runtimeProfile.legacyKeychainServices
+        )
+        let resolvedStore = store ?? ConfigurationStore(
+            fileURL: runtimeProfile.configurationURL,
+            legacyImportURL: runtimeProfile.legacyConfigurationURL,
+            initialConfiguration: runtimeProfile.initialConfiguration,
+            endpointCredentialLookup: { try resolvedTokenStore.token(for: $0) }
+        )
+        self.runtimeProfile = runtimeProfile
+        self.store = resolvedStore
         self.inspector = inspector
-        self.tokenStore = tokenStore
-        self.backgroundTokenStore = tokenStore.disallowingUserInteraction()
-        self.tokenUsageStore = tokenUsageStore
-        self.deletionCoordinator = ConfigurationDeletionCoordinator(store: store, secretStore: tokenStore)
+        self.tokenStore = resolvedTokenStore
+        self.backgroundTokenStore = resolvedTokenStore.disallowingUserInteraction()
+        self.tokenUsageStore = tokenUsageStore ?? TokenUsageStore(fileURL: runtimeProfile.tokenUsageURL)
+        self.codexBarUsageService = CodexBarUsageService(
+            authDirectoryURL: runtimeProfile.cliProxyDataDirectoryURL.appendingPathComponent("auths", isDirectory: true)
+        )
+        self.deletionCoordinator = ConfigurationDeletionCoordinator(
+            store: resolvedStore,
+            secretStore: resolvedTokenStore
+        )
+        self.launchAtLogin = runtimeProfile.supportsLaunchAtLogin
+            && SMAppService.mainApp.status == .enabled
         let monitor = NetworkMonitor { [weak self] availability in
             Task { @MainActor [weak self] in
                 await self?.networkAvailabilityChanged(availability)
@@ -134,6 +172,7 @@ final class AppModel: ObservableObject {
             try ensureService()
             await applyRuntimeAvailability()
             await reconcileService()
+            await reconcileCLIProxy()
             await reconcileGateway()
         } catch {
             isLoaded = true
@@ -143,6 +182,7 @@ final class AppModel: ObservableObject {
 
     func saveAndRestart() async {
         do {
+            configuration.reconcileManagedCLIProxyEndpoint()
             try await store.save(configuration)
             errorMessage = nil
             lastSavedAt = Date()
@@ -150,6 +190,7 @@ final class AppModel: ObservableObject {
             try ensureService()
             await applyRuntimeAvailability()
             await reconcileService()
+            await reconcileCLIProxy()
             await reconcileGateway()
         } catch {
             errorMessage = error.localizedDescription
@@ -229,6 +270,12 @@ final class AppModel: ObservableObject {
         selectedEndpointID = nil
         selectedTunnelID = nil
         navigationRequest = .gateway
+    }
+
+    func showSubscriptionAccounts() {
+        selectedEndpointID = nil
+        selectedTunnelID = nil
+        navigationRequest = .subscriptionAccounts
     }
 
     func showSettings() {
@@ -446,13 +493,36 @@ final class AppModel: ObservableObject {
     }
 
     func inspectAllEndpoints() async {
-        for endpoint in configuration.endpoints where endpoint.enabled {
+        let connectedTunnelIDs = Set(statuses.values.compactMap { status in
+            status.phase == .connected ? status.tunnelID : nil
+        })
+        let connectedMappingIDs = Set(configuration.tunnels.lazy
+            .filter { connectedTunnelIDs.contains($0.id) }
+            .flatMap(\.mappings)
+            .map(\.id))
+        let endpointIDs = configuration.endpoints.compactMap { endpoint -> UUID? in
+            guard endpoint.enabled else { return nil }
             if case let .sshMapping(mappingID, _) = endpoint.source,
-               !statuses.values.contains(where: { status in
-                   status.phase == .connected
-                       && configuration.tunnels.first(where: { $0.id == status.tunnelID })?.mappings.contains(where: { $0.id == mappingID }) == true
-               }) { continue }
-            await inspectEndpoint(endpoint.id)
+               !connectedMappingIDs.contains(mappingID) {
+                return nil
+            }
+            return endpoint.id
+        }
+
+        await withTaskGroup(of: Void.self) { group in
+            var iterator = endpointIDs.makeIterator()
+            for _ in 0..<min(Self.endpointInspectionConcurrency, endpointIDs.count) {
+                guard let endpointID = iterator.next() else { break }
+                group.addTask { [weak self] in
+                    await self?.inspectEndpoint(endpointID)
+                }
+            }
+            while await group.next() != nil {
+                guard let endpointID = iterator.next() else { continue }
+                group.addTask { [weak self] in
+                    await self?.inspectEndpoint(endpointID)
+                }
+            }
         }
     }
 
@@ -715,6 +785,130 @@ final class AppModel: ObservableObject {
         copy("http://127.0.0.1:\(configuration.gateway.listenPort)/v1")
     }
 
+    func connectSubscriptionAccount(_ provider: CLIProxyLoginProvider) async {
+        subscriptionLoginTask?.cancel()
+        subscriptionLoginTask = nil
+        cliProxyRestartTask?.cancel()
+        cliProxyRestartTask = nil
+        cliProxyStabilityTask?.cancel()
+        cliProxyStabilityTask = nil
+        cliProxyRestartAttempt = 0
+        do {
+            if !configuration.cliProxy.enabled {
+                var candidate = configuration
+                candidate.cliProxy.enabled = true
+                candidate.reconcileManagedCLIProxyEndpoint()
+                let apiKey = try tokenStore.ensureToken(for: candidate.cliProxy.endpointID)
+                _ = try tokenStore.ensureCLIProxyManagementPassword()
+                try await store.save(candidate)
+                configuration = candidate
+                tokenAvailability[candidate.cliProxy.endpointID] = !apiKey.isEmpty
+                lastSavedAt = Date()
+            }
+
+            await reconcileCLIProxy()
+            guard case .running = cliProxyState else {
+                throw SubscriptionAccountError.proxyUnavailable
+            }
+            let client = try cliProxyManagementClient()
+            let login = try await client.startLogin(provider)
+            activeSubscriptionProvider = provider
+            activeSubscriptionLogin = login
+            errorMessage = nil
+            NSWorkspace.shared.open(login.url)
+            subscriptionLoginTask = Task { @MainActor [weak self] in
+                await self?.pollSubscriptionLogin(state: login.state)
+            }
+        } catch {
+            activeSubscriptionProvider = nil
+            activeSubscriptionLogin = nil
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func cancelSubscriptionLogin() async {
+        subscriptionLoginTask?.cancel()
+        subscriptionLoginTask = nil
+        if let state = activeSubscriptionLogin?.state,
+           let client = try? cliProxyManagementClient() {
+            try? await client.cancelLogin(state: state)
+        }
+        activeSubscriptionProvider = nil
+        activeSubscriptionLogin = nil
+    }
+
+    func refreshSubscriptionAccounts(showErrors: Bool = true) async {
+        guard configuration.cliProxy.enabled else {
+            subscriptionAccounts = []
+            subscriptionUsage = [:]
+            return
+        }
+        isRefreshingSubscriptionAccounts = true
+        defer { isRefreshingSubscriptionAccounts = false }
+        do {
+            let client = try cliProxyManagementClient()
+            subscriptionAccounts = try await client.accounts()
+            if showErrors { errorMessage = nil }
+        } catch {
+            if showErrors { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func refreshSubscriptionAccountState(showErrors: Bool = true) async {
+        await refreshSubscriptionAccounts(showErrors: showErrors)
+        guard configuration.cliProxy.enabled else { return }
+        await inspectEndpoint(configuration.cliProxy.endpointID)
+    }
+
+    func refreshSubscriptionUsage() async {
+        guard !isRefreshingSubscriptionUsage else { return }
+        let codexAccounts = subscriptionAccounts.filter { $0.provider.lowercased() == "codex" }
+        guard !codexAccounts.isEmpty, codexBarUsageService.executableURL != nil else {
+            subscriptionUsage = [:]
+            return
+        }
+        isRefreshingSubscriptionUsage = true
+        defer { isRefreshingSubscriptionUsage = false }
+        let snapshots = await codexBarUsageService.usage(for: codexAccounts)
+        subscriptionUsage = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.id, $0) })
+    }
+
+    var isCodexBarAvailable: Bool {
+        codexBarUsageService.executableURL != nil
+    }
+
+    func removeSubscriptionAccount(_ account: CLIProxyAccount) async {
+        do {
+            let client = try cliProxyManagementClient()
+            try await client.deleteAccount(named: account.name)
+            await refreshSubscriptionAccounts()
+            await inspectEndpoint(configuration.cliProxy.endpointID)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func setSubscriptionAccountEnabled(_ account: CLIProxyAccount, enabled: Bool) async {
+        guard !updatingSubscriptionAccountIDs.contains(account.id) else { return }
+        updatingSubscriptionAccountIDs.insert(account.id)
+        defer { updatingSubscriptionAccountIDs.remove(account.id) }
+        do {
+            let client = try cliProxyManagementClient()
+            try await client.setAccountDisabled(account, disabled: !enabled)
+            await refreshSubscriptionAccounts()
+            await inspectEndpoint(configuration.cliProxy.endpointID)
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func copySubscriptionLoginCode() {
+        guard let code = activeSubscriptionLogin?.userCode else { return }
+        copy(code)
+    }
+
     func copyGatewayToken() {
         guard let key = configuration.gateway.apiKeys.first(where: \.enabled)
                 ?? configuration.gateway.apiKeys.first else {
@@ -959,6 +1153,10 @@ final class AppModel: ObservableObject {
     }
 
     func setLaunchAtLogin(_ enabled: Bool) {
+        guard runtimeProfile.supportsLaunchAtLogin else {
+            launchAtLogin = false
+            return
+        }
         do {
             if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
             launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -976,9 +1174,18 @@ final class AppModel: ObservableObject {
         networkMonitor = nil
         inspectionTasks.values.forEach { $0.cancel() }
         inspectionTasks.removeAll()
+        subscriptionLoginTask?.cancel()
+        subscriptionLoginTask = nil
+        cliProxyRestartTask?.cancel()
+        cliProxyRestartTask = nil
+        cliProxyStabilityTask?.cancel()
+        cliProxyStabilityTask = nil
         await gatewayService?.stop()
         gatewayService = nil
         gatewayState = .stopped
+        await cliProxyService?.stop()
+        cliProxyService = nil
+        cliProxyState = .stopped
         await service?.stopAll()
         service = nil
         runtimeOwnership = nil
@@ -1004,9 +1211,15 @@ final class AppModel: ObservableObject {
         sleeping = true
         inspectionTasks.values.forEach { $0.cancel() }
         inspectionTasks.removeAll()
+        cliProxyRestartTask?.cancel()
+        cliProxyRestartTask = nil
+        cliProxyStabilityTask?.cancel()
+        cliProxyStabilityTask = nil
         await gatewayService?.stop()
         gatewayService = nil
         gatewayState = .stopped
+        await cliProxyService?.stop()
+        cliProxyState = .stopped
         await service?.setRuntimeAvailable(false, reason: "Waiting for Mac to wake")
         await diagnosticLog.append(
             subject: .gateway,
@@ -1019,6 +1232,7 @@ final class AppModel: ObservableObject {
     func resumeAfterWake() async {
         sleeping = false
         await applyRuntimeAvailability()
+        await reconcileCLIProxy()
         if networkAvailable { await reconcileGateway() }
     }
 
@@ -1027,9 +1241,41 @@ final class AppModel: ObservableObject {
         NSPasteboard.general.setString(value, forType: .string)
     }
 
+    func dismissError() {
+        errorMessage = nil
+    }
+
     func copyDiagnosticSummary() async {
         let value = await diagnosticLog.summary()
         copy(value.isEmpty ? "ModelMoor has no diagnostic events yet." : value)
+    }
+
+    func openPersistenceDirectory(_ directoryURL: URL) {
+        do {
+            if !FileManager.default.fileExists(atPath: directoryURL.path) {
+                try FileManager.default.createDirectory(
+                    at: directoryURL,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+            }
+            guard NSWorkspace.shared.open(directoryURL) else {
+                throw PersistenceLocationError.couldNotOpen(directoryURL.path)
+            }
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func openKeychainAccess() {
+        guard let applicationURL = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.keychainaccess"
+        ), NSWorkspace.shared.open(applicationURL) else {
+            errorMessage = PersistenceLocationError.keychainAccessUnavailable.localizedDescription
+            return
+        }
+        errorMessage = nil
     }
 
     func tunnelBinding(id: UUID) -> Binding<TunnelConfiguration>? {
@@ -1050,8 +1296,13 @@ final class AppModel: ObservableObject {
 
     private func ensureService() throws {
         guard service == nil else { return }
-        let ownership = try RuntimeOwnership.acquire(owner: "ModelMoor app")
-        let replacement = TunnelService { [weak self] status in
+        let ownership = try RuntimeOwnership.acquire(
+            lockFileURL: runtimeProfile.runtimeLockURL,
+            owner: "\(runtimeProfile.displayName) app"
+        )
+        let replacement = TunnelService(
+            commandBuilder: SSHCommandBuilder(controlDirectoryURL: runtimeProfile.runtimeDirectoryURL)
+        ) { [weak self] status in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.statuses[status.tunnelID] = status
@@ -1074,6 +1325,128 @@ final class AppModel: ObservableObject {
     private func reconcileService() async {
         let desired = configuration.tunnels.filter { requestedTunnelIDs.contains($0.id) }
         await service?.reconcile(desired)
+    }
+
+    private func reconcileCLIProxy() async {
+        guard configuration.cliProxy.enabled, !sleeping else {
+            await cliProxyService?.stop()
+            cliProxyState = .stopped
+            if !configuration.cliProxy.enabled {
+                subscriptionAccounts = []
+                subscriptionUsage = [:]
+            }
+            return
+        }
+        do {
+            let apiKey = try backgroundTokenStore.ensureToken(for: configuration.cliProxy.endpointID)
+            let managementPassword = try backgroundTokenStore.ensureCLIProxyManagementPassword()
+            if cliProxyService == nil {
+                cliProxyService = CLIProxyService(
+                    dataDirectoryURL: runtimeProfile.cliProxyDataDirectoryURL
+                ) { [weak self] state in
+                    Task { @MainActor [weak self] in self?.handleCLIProxyState(state) }
+                }
+            }
+            guard let cliProxyService else { return }
+            try await cliProxyService.start(
+                configuration: configuration.cliProxy,
+                apiKey: apiKey,
+                managementPassword: managementPassword
+            )
+            cliProxyState = await cliProxyService.state
+            await refreshSubscriptionAccounts(showErrors: false)
+            await inspectEndpoint(configuration.cliProxy.endpointID)
+        } catch {
+            cliProxyState = .failed(error.localizedDescription)
+            await diagnosticLog.append(
+                subject: .gateway,
+                severity: .error,
+                category: "cliproxy.failed",
+                summary: error.localizedDescription
+            )
+        }
+    }
+
+    private func handleCLIProxyState(_ state: CLIProxyRuntimeState) {
+        cliProxyState = state
+        switch state {
+        case .running:
+            cliProxyRestartTask?.cancel()
+            cliProxyRestartTask = nil
+            cliProxyStabilityTask?.cancel()
+            cliProxyStabilityTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(60))
+                guard !Task.isCancelled, let self, case .running = self.cliProxyState else { return }
+                self.cliProxyRestartAttempt = 0
+                self.cliProxyStabilityTask = nil
+            }
+        case .failed:
+            cliProxyStabilityTask?.cancel()
+            cliProxyStabilityTask = nil
+            guard configuration.cliProxy.enabled,
+                  !sleeping,
+                  cliProxyRestartAttempt < 5,
+                  cliProxyRestartTask == nil else { return }
+            let delay = min(30, 1 << cliProxyRestartAttempt)
+            cliProxyRestartAttempt += 1
+            cliProxyRestartTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled, let self else { return }
+                self.cliProxyRestartTask = nil
+                await self.reconcileCLIProxy()
+                await self.reconcileGateway()
+            }
+        case .stopped:
+            cliProxyStabilityTask?.cancel()
+            cliProxyStabilityTask = nil
+        case .starting:
+            break
+        }
+    }
+
+    private func cliProxyManagementClient() throws -> CLIProxyManagementClient {
+        guard case .running = cliProxyState else {
+            throw SubscriptionAccountError.proxyUnavailable
+        }
+        guard let password = try backgroundTokenStore.cliProxyManagementPassword(), !password.isEmpty else {
+            throw SubscriptionAccountError.managementCredentialUnavailable
+        }
+        return CLIProxyManagementClient(
+            port: configuration.cliProxy.listenPort,
+            managementPassword: password
+        )
+    }
+
+    private func pollSubscriptionLogin(state: String) async {
+        do {
+            let client = try cliProxyManagementClient()
+            for _ in 0..<300 {
+                try Task.checkCancellation()
+                let status = try await client.loginStatus(state: state)
+                switch status.status {
+                case "ok":
+                    activeSubscriptionLogin = nil
+                    activeSubscriptionProvider = nil
+                    subscriptionLoginTask = nil
+                    await refreshSubscriptionAccounts()
+                    await inspectEndpoint(configuration.cliProxy.endpointID)
+                    await reconcileGateway()
+                    return
+                case "error":
+                    throw SubscriptionAccountError.loginFailed(status.error ?? "Authentication failed.")
+                default:
+                    try await Task.sleep(for: .seconds(1))
+                }
+            }
+            throw SubscriptionAccountError.loginTimedOut
+        } catch is CancellationError {
+            return
+        } catch {
+            activeSubscriptionLogin = nil
+            activeSubscriptionProvider = nil
+            subscriptionLoginTask = nil
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func networkAvailabilityChanged(_ availability: NetworkAvailability) async {
@@ -1323,5 +1696,39 @@ final class AppModel: ObservableObject {
         var index = 2
         while names.contains("\(base) \(index)".lowercased()) { index += 1 }
         return "\(base) \(index)"
+    }
+}
+
+private enum SubscriptionAccountError: LocalizedError {
+    case proxyUnavailable
+    case managementCredentialUnavailable
+    case loginFailed(String)
+    case loginTimedOut
+
+    var errorDescription: String? {
+        switch self {
+        case .proxyUnavailable:
+            "The managed subscription proxy is not running."
+        case .managementCredentialUnavailable:
+            "The subscription proxy management credential is unavailable in Keychain."
+        case let .loginFailed(message):
+            message
+        case .loginTimedOut:
+            "Account sign-in timed out. Start the sign-in again."
+        }
+    }
+}
+
+private enum PersistenceLocationError: LocalizedError {
+    case couldNotOpen(String)
+    case keychainAccessUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case let .couldNotOpen(path):
+            "Could not open the persistence folder: \(path)"
+        case .keychainAccessUnavailable:
+            "Keychain Access could not be opened on this Mac."
+        }
     }
 }

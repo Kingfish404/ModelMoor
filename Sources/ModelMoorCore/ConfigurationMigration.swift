@@ -1,6 +1,27 @@
 import Foundation
 
 enum ConfigurationMigration {
+    static func migrateV2(_ data: Data) throws -> ModelMoorConfiguration {
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw ConfigurationError.unreadable("Could not decode schema 2 configuration: \(error.localizedDescription)")
+        }
+        guard var dictionary = object as? [String: Any], dictionary["schemaVersion"] as? Int == 2 else {
+            throw ConfigurationError.unsupportedSchema((object as? [String: Any])?["schemaVersion"] as? Int ?? -1)
+        }
+        dictionary["schemaVersion"] = ModelMoorConfiguration.currentSchemaVersion
+        do {
+            let migratedData = try JSONSerialization.data(withJSONObject: dictionary)
+            return try JSONDecoder().decode(ModelMoorConfiguration.self, from: migratedData).validated()
+        } catch let error as ConfigurationError {
+            throw error
+        } catch {
+            throw ConfigurationError.unreadable("Could not migrate schema 2 configuration: \(error.localizedDescription)")
+        }
+    }
+
     static func migrateV1(
         _ data: Data,
         endpointHasCredential: (UUID) -> Bool = { _ in false }

@@ -1,8 +1,10 @@
 import Foundation
+import ModelMoorCore
 
 enum NavigationSelection: Hashable {
     case overview
     case endpoint(UUID)
+    case subscriptionAccounts
     case gateway
     case usage
     case settings
@@ -58,6 +60,44 @@ enum EndpointReadiness {
         case .checking: "arrow.triangle.2.circlepath"
         case .ready: "checkmark.circle.fill"
         case .needsAttention: "exclamationmark.triangle.fill"
+        }
+    }
+}
+
+extension TunnelPhase {
+    var isConnectionActionPending: Bool {
+        self == .disconnecting
+    }
+
+    var usesDisconnectAction: Bool {
+        switch self {
+        case .waitingForNetwork, .connecting, .connected, .waitingToRetry:
+            true
+        case .stopped, .disconnecting, .failed:
+            false
+        }
+    }
+
+    var connectionActionTitle: String {
+        switch self {
+        case .stopped: "Connect"
+        case .waitingForNetwork, .connected, .waitingToRetry: "Disconnect"
+        case .connecting: "Cancel Connection"
+        case .disconnecting: "Disconnecting…"
+        case .failed: "Retry"
+        }
+    }
+
+    var canConnect: Bool {
+        self == .stopped || self == .failed
+    }
+
+    var canDisconnect: Bool {
+        switch self {
+        case .waitingForNetwork, .connecting, .connected, .waitingToRetry:
+            true
+        case .stopped, .disconnecting, .failed:
+            false
         }
     }
 }

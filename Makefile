@@ -10,6 +10,7 @@ SHELL := /bin/zsh
 PROJECT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 BUILD_DIR := $(PROJECT_DIR)/.build
 APP_DIR := $(BUILD_DIR)/app/ModelMoor.app
+DEV_APP_DIR := $(BUILD_DIR)/app-dev/ModelMoor Dev.app
 CACHE_DIR := $(BUILD_DIR)/cache
 MODULE_CACHE := $(BUILD_DIR)/module-cache
 
@@ -25,7 +26,7 @@ BUILD_OPTIONS := --disable-sandbox --cache-path $(CACHE_DIR)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build app cli debug test run install clean
+.PHONY: help build app app-dev cli debug test run run-dev run-release install clean
 
 help: ## Show available build commands
 	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
@@ -34,7 +35,10 @@ help: ## Show available build commands
 build: app ## Build the release app bundle and CLI (alias for app)
 
 app: ## Build the release app bundle and CLI
-	./Scripts/build-app.sh
+	./Scripts/build-app.sh production
+
+app-dev: ## Build the isolated ModelMoor Dev app bundle
+	./Scripts/build-app.sh development
 
 cli: ## Build the release CLI
 	swift build $(BUILD_OPTIONS) -c release
@@ -45,8 +49,13 @@ debug: ## Build the debug binaries
 test: ## Run the test suite
 	swift test $(BUILD_OPTIONS)
 
-run: app ## Build and open the app
-	open $(APP_DIR)
+run: run-dev ## Build and open the isolated development app
+
+run-dev: app-dev ## Build and open ModelMoor Dev
+	open "$(DEV_APP_DIR)"
+
+run-release: app ## Build and open the production-profile app
+	open "$(APP_DIR)"
 
 install: app ## Build and install to /Applications
 	rm -rf /Applications/ModelMoor.app

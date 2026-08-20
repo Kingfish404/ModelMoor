@@ -1,14 +1,24 @@
 import AppKit
+import ModelMoorCore
 import SwiftUI
 
 @MainActor
 final class AppLifecycleController: NSObject, NSApplicationDelegate, NSWindowDelegate, ObservableObject {
-    let model = AppModel()
-    let updates = UpdateController()
+    let runtimeProfile: ModelMoorRuntimeProfile
+    let model: AppModel
+    let updates: UpdateController
 
     private var mainWindowController: NSWindowController?
     private var terminationRequested = false
     private var workspaceObservers: [NSObjectProtocol] = []
+
+    override init() {
+        let profile = ModelMoorRuntimeProfile.current
+        runtimeProfile = profile
+        model = AppModel(runtimeProfile: profile)
+        updates = UpdateController(updatesAvailable: profile.supportsSoftwareUpdates)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if let iconURL = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
@@ -40,7 +50,10 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate, NSWindowDel
             }
             let configuration = model.configuration
             let hasUsableDirectEndpoint = configuration.endpoints.contains { endpoint in
-                guard case .directHTTPS = endpoint.source else { return false }
+                switch endpoint.source {
+                case .directHTTPS, .managedCLIProxy: break
+                case .sshMapping: return false
+                }
                 return endpoint.authentication == .none || model.hasToken(for: endpoint.id)
             }
             if configuration.tunnels.isEmpty,
@@ -124,7 +137,7 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate, NSWindowDel
             .environmentObject(updates)
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "ModelMoor"
+        window.title = runtimeProfile.displayName
         window.setContentSize(NSSize(width: 1_020, height: 720))
         window.minSize = NSSize(width: 860, height: 600)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -135,7 +148,7 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate, NSWindowDel
         window.isReleasedWhenClosed = false
         window.isRestorable = true
         window.delegate = self
-        window.setFrameAutosaveName("ModelMoorMainWindow")
+        window.setFrameAutosaveName("\(runtimeProfile.displayName.replacingOccurrences(of: " ", with: ""))MainWindow")
         window.center()
         return NSWindowController(window: window)
     }

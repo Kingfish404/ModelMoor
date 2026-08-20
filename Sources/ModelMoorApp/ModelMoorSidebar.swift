@@ -16,7 +16,7 @@ struct ModelMoorSidebar: View {
             utilityNavigation
                 .frame(height: SidebarMetrics.utilityListHeight)
         }
-        .navigationTitle("ModelMoor")
+        .navigationTitle(model.runtimeProfile.displayName)
         .onChange(of: selection) { _, newSelection in
             guard case let .endpoint(id)? = newSelection,
                   otherEndpoints.contains(where: { $0.id == id }) else { return }
@@ -46,6 +46,17 @@ struct ModelMoorSidebar: View {
 
                 VStack(alignment: .leading, spacing: SidebarMetrics.rowSpacingVertical) {
                     SidebarSectionHeader(
+                        title: "SSH Connections",
+                        actionLabel: "Add SSH Connection",
+                        action: addSSHConnection
+                    )
+                    .padding(.horizontal, SidebarMetrics.rowHorizontalPadding)
+
+                    ForEach(model.configuration.tunnels) { connection in connectionRow(connection) }
+                }
+
+                VStack(alignment: .leading, spacing: SidebarMetrics.rowSpacingVertical) {
+                    SidebarSectionHeader(
                         title: "API Endpoints",
                         actionLabel: "Add API Endpoint",
                         action: addEndpoint
@@ -55,16 +66,14 @@ struct ModelMoorSidebar: View {
                     ForEach(llmEndpoints) { endpoint in endpointRow(endpoint) }
                 }
 
-                VStack(alignment: .leading, spacing: SidebarMetrics.rowSpacingVertical) {
-                    SidebarSectionHeader(
-                        title: "SSH Connections",
-                        actionLabel: "Add SSH Connection",
-                        action: addSSHConnection
-                    )
-                    .padding(.horizontal, SidebarMetrics.rowHorizontalPadding)
-
-                    ForEach(model.configuration.tunnels) { connection in connectionRow(connection) }
-                }
+                SidebarNavigationButton(
+                    title: "Subscription",
+                    subtitle: subscriptionSubtitle,
+                    symbol: subscriptionSymbol,
+                    symbolColor: subscriptionSymbolColor,
+                    destination: .subscriptionAccounts,
+                    selection: $selection
+                )
 
                 if !otherEndpoints.isEmpty || !otherPortForwards.isEmpty {
                     VStack(alignment: .leading, spacing: SidebarMetrics.rowSpacingVertical) {
@@ -146,7 +155,9 @@ struct ModelMoorSidebar: View {
     }
 
     private var llmEndpoints: [APIEndpointConfiguration] {
-        model.configuration.endpoints.filter(model.isRecognizedLLMEndpoint)
+        model.configuration.endpoints.filter {
+            model.isRecognizedLLMEndpoint($0) && !isManagedSubscriptionEndpoint($0)
+        }
     }
 
     private var otherEndpoints: [APIEndpointConfiguration] {
@@ -192,7 +203,7 @@ struct ModelMoorSidebar: View {
     }
 
     private func connectionRow(_ connection: TunnelConfiguration) -> some View {
-        let isConnected = model.status(for: connection.id).phase == .connected
+        let phase = model.status(for: connection.id).phase
         return SidebarNavigationButton(
             title: connection.name,
             subtitle: connectionSubtitle(connection),
@@ -201,12 +212,16 @@ struct ModelMoorSidebar: View {
             selection: $selection
         )
         .contextMenu {
-            Button(isConnected ? "Disconnect" : "Connect") {
+            Button(phase.connectionActionTitle) {
                 Task {
-                    if isConnected { await model.disconnect(connection.id) }
+                    if phase.usesDisconnectAction { await model.disconnect(connection.id) }
                     else { await model.connect(connection.id) }
                 }
             }
+            .disabled(
+                phase.isConnectionActionPending
+                    || (!phase.usesDisconnectAction && connection.enabledMappings.isEmpty)
+            )
             Button("Run diagnostics") { Task { await model.inspectMappings(in: connection.id) } }
             Divider()
             Button("Show in ModelMoor") { selection = .connection(connection.id) }
@@ -236,12 +251,19 @@ struct ModelMoorSidebar: View {
 
     private func isDirectEndpoint(_ endpoint: APIEndpointConfiguration) -> Bool {
         if case .directHTTPS = endpoint.source { return true }
+        if case .managedCLIProxy = endpoint.source { return true }
+        return false
+    }
+
+    private func isManagedSubscriptionEndpoint(_ endpoint: APIEndpointConfiguration) -> Bool {
+        if case .managedCLIProxy = endpoint.source { return true }
         return false
     }
 
     private func sourceSummary(_ endpoint: APIEndpointConfiguration) -> String {
         switch endpoint.source {
         case let .directHTTPS(origin): return origin.host ?? "Direct HTTPS"
+        case .managedCLIProxy: return "Subscription accounts"
         case let .sshMapping(mappingID, _):
             for connection in model.configuration.tunnels where connection.mappings.contains(where: { $0.id == mappingID }) {
                 return "via \(connection.name)"
@@ -271,6 +293,27 @@ struct ModelMoorSidebar: View {
         case .running: return count == 1 ? "Ready, 1 model" : "Ready, \(count) models"
         case .failed: return "Needs attention"
         }
+    }
+
+    private var subscriptionSubtitle: String {
+        if case .failed = model.cliProxyState { return "Needs attention" }
+        if model.activeSubscriptionLogin != nil { return "Waiting for sign-in" }
+        let total = model.subscriptionAccounts.count
+        guard total > 0 else { return "No accounts connected" }
+        let active = model.subscriptionAccounts.filter { !$0.disabled }.count
+        if total == 1 { return active == 1 ? "1 active account" : "1 disabled account" }
+        return "\(active) active of \(total) accounts"
+    }
+
+    private var subscriptionSymbol: String {
+        if case .failed = model.cliProxyState { return "exclamationmark.triangle.fill" }
+        if model.activeSubscriptionLogin != nil { return "person.crop.circle.badge.clock" }
+        return model.subscriptionAccounts.isEmpty ? "person.2.badge.plus" : "person.2.fill"
+    }
+
+    private var subscriptionSymbolColor: Color {
+        if case .failed = model.cliProxyState { return .orange }
+        return model.subscriptionAccounts.contains { !$0.disabled } ? .green : .secondary
     }
 
     private var gatewaySymbol: String {
@@ -359,6 +402,8 @@ private enum SidebarMetrics {
 }
 
 private struct SidebarNavigationButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.controlActiveState) private var controlActiveState
     let title: String
     var subtitle: String?
     let symbol: String
@@ -366,6 +411,7 @@ private struct SidebarNavigationButton: View {
     var isMuted = false
     let destination: NavigationSelection
     @Binding var selection: NavigationSelection?
+    @State private var isHovering = false
 
     private var isSelected: Bool { selection == destination }
 
@@ -405,21 +451,40 @@ private struct SidebarNavigationButton: View {
         }
         .buttonStyle(StableSidebarButtonStyle())
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityValue(subtitle ?? "")
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        .onHover { isHovering = $0 }
     }
 
     private var foregroundColor: Color {
-        if isSelected { return Color(nsColor: .selectedControlTextColor) }
+        if isSelected {
+            if controlActiveState == .inactive {
+                return Color(nsColor: .unemphasizedSelectedTextColor)
+            }
+            return colorScheme == .light
+                ? .white
+                : Color(nsColor: .selectedControlTextColor)
+        }
         return isMuted ? Color.secondary.opacity(0.72) : .primary
     }
 
     private var iconColor: Color {
-        if isSelected { return Color(nsColor: .selectedControlTextColor).opacity(0.82) }
+        if isSelected { return foregroundColor.opacity(0.9) }
         return symbolColor.opacity(isMuted ? 0.5 : 1)
     }
 
     private var selectionBackground: Color {
-        isSelected ? Color(nsColor: .selectedContentBackgroundColor) : .clear
+        if isSelected {
+            if controlActiveState == .inactive {
+                return Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
+            }
+            return Color(nsColor: .selectedContentBackgroundColor)
+        }
+        if isHovering {
+            return Color.primary.opacity(colorScheme == .dark ? 0.09 : 0.055)
+        }
+        return .clear
     }
 }
 

@@ -69,6 +69,7 @@ The Mac must keep ModelMoor and the SSH connection running. Both listeners remai
 - Models SSH forwarding as a transport and API endpoints separately
 - Keeps non-LLM forwarded services in a collapsed **Others** sidebar group instead of reporting API warnings
 - Supports direct HTTPS OpenAI-compatible endpoints such as DeepSeek, with one Keychain secret per endpoint
+- Connects ChatGPT/Codex, Claude Code, Google Antigravity, Kimi, and xAI/Grok subscription accounts through a bundled, ModelMoor-managed CLIProxyAPI helper
 - Discovers OpenAI-compatible and Ollama models and reports endpoint health independently from SSH state
 - Routes stable public model aliases to exact upstream models without fallback, load balancing, or inference retries
 - Serves a loopback-only `/v1/models`, with optional multi-key bearer authentication, and streams OpenAI-compatible responses, including SSE
@@ -108,11 +109,18 @@ curl http://127.0.0.1:17777/v1/chat/completions \
   -d '{"model":"deepseek-fast","messages":[{"role":"user","content":"Hello"}],"stream":true}'
 ```
 
+### Use subscription accounts
+
+Open **Subscription** in the sidebar, then connect ChatGPT/Codex, Claude Code, Google Antigravity, Kimi, or xAI/Grok. Sign-in happens in the provider's browser or device flow; ModelMoor never receives the account password. Add multiple accounts for the same provider when needed, and disable individual accounts without removing their credentials. After models are discovered, configure the models to expose from **Unified API**.
+
+ModelMoor starts the bundled CLIProxyAPI helper only on loopback, gives it a private internal API key and management password from Keychain, monitors its process, and stops it with the app. The public client still uses only the ModelMoor Unified API URL and its ModelMoor API key.
+
 ## Requirements
 
 - macOS 14 or later
 - Xcode 26 / Swift 6.1 or later (for building from source)
 - `rsvg-convert` (`brew install librsvg`) or Inkscape for generating AppIcon PNGs
+- Network access on the first app build, to download the pinned CLIProxyAPI release artifact
 
 ## Building and Running
 
@@ -121,11 +129,12 @@ app-icon source. Missing or stale PNG sizes are generated automatically during
 the app build.
 
 ```bash
-make app
-open .build/app/ModelMoor.app
+make run
 ```
 
-The build also produces the release CLI and prints its path when done. After moving the app to `/Applications`, you can enable start at login from the Settings item at the bottom of the ModelMoor sidebar, or press Command-,.
+`make run` builds and opens the isolated **ModelMoor Dev** app. Its settings, Keychain items, ports, SSH runtime, usage history, and managed CLIProxyAPI data are separate from an installed production version. Use `make app` only when assembling the production-profile app at `.build/app/ModelMoor.app`.
+
+The production build also produces the release CLI and prints its path when done. After moving the production app to `/Applications`, you can enable start at login from the Settings item at the bottom of the ModelMoor sidebar, or press Command-,.
 
 Run `make help` to see all build commands. See [docs/development.md](docs/development.md) for build internals, project layout, and testing.
 
@@ -194,6 +203,15 @@ modelmoor config-path
 
 For testing or automation, set `MODELMOOR_CONFIG=/path/to/config.json` to avoid modifying the real configuration.
 
+Non-secret configuration is stored in XDG-style files so it can be inspected, backed up, or copied between profiles:
+
+```text
+~/.config/modelmoor/config.json      # production
+~/.config/modelmoor/config.dev.json  # development
+```
+
+`XDG_CONFIG_HOME` replaces `~/.config` when it contains an absolute path. On first launch after upgrading, ModelMoor copies the matching legacy `Application Support` configuration into the new location and leaves the old file unchanged. Copying a configuration between profiles does not copy its Keychain credentials.
+
 ## Security Boundaries
 
 - SSH passwords, private keys, ProxyJump, and the agent are managed by the system OpenSSH.
@@ -201,10 +219,13 @@ For testing or automation, set `MODELMOOR_CONFIG=/path/to/config.json` to avoid 
 - Local and remote listener addresses only accept `127.0.0.1` or `localhost`.
 - `-R 0.0.0.0:...` and GatewayPorts are not supported yet, to avoid exposing local services to the remote network.
 - Endpoint credentials and Unified API key values are stored only in the current user's macOS Keychain. Configuration contains only key names, identifiers, and enabled states.
+- The CLIProxyAPI internal API key and management password are generated from Keychain. The helper requires its API key in configuration, so ModelMoor materializes that loopback-only key into a mode-0600 generated config while the management password remains environment-only. OAuth access and refresh tokens for subscription providers are file-backed because CLIProxyAPI requires auth files; they live under `~/Library/Application Support/ModelMoor/CLIProxyAPI/auths` inside directories restricted to the current user. Development builds use the separate `ModelMoor Dev` application-data directory.
+- The managed CLIProxyAPI listener and management API bind only to loopback. Remote management is disabled, its control panel is disabled, request logging and upstream retries are disabled, and the management password is passed in memory through the child-process environment rather than written into configuration.
 - The Unified API binds only `127.0.0.1`. Bearer authentication is enabled by default, supports multiple independently enabled keys, and can be turned off with an in-app warning. Newly created and rotated keys use the familiar `sk-` prefix; an existing legacy Gateway Token remains valid as the Default key until the user rotates it. Client credentials are removed before ModelMoor injects only the selected endpoint credential.
 - API inspection only performs GET probes. The Gateway never logs request or response bodies and never retries or falls back to another paid endpoint.
 - Usage history stores only a timestamp, total token count, and internal route/endpoint identifiers. It is based on upstream `usage` fields, so a streaming response is counted only when the upstream includes usage data.
 - Gateway requests are limited to 16 MiB and 64 active requests; file, image/audio upload, CORS, and native Anthropic/Gemini protocol translation are intentionally out of scope.
+- Subscription routing depends on each provider's current subscription terms and CLIProxyAPI's compatibility layer. It does not convert a consumer subscription into an official metered API entitlement; users remain responsible for provider terms, quotas, and account policy.
 
 ## Documentation
 

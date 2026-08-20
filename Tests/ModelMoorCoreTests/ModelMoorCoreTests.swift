@@ -537,7 +537,7 @@ final class ModelMoorCoreTests: XCTestCase {
         await service.stopAll()
     }
 
-    func testConfigurationStoreRoundTripUsesSchemaTwo() async throws {
+    func testConfigurationStoreRoundTripUsesCurrentSchema() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ModelMoorTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -550,12 +550,13 @@ final class ModelMoorCoreTests: XCTestCase {
         let loaded = try await store.load()
 
         XCTAssertEqual(loaded, expected)
-        XCTAssertEqual(loaded.schemaVersion, 2)
+        XCTAssertEqual(loaded.schemaVersion, 3)
         let saved = try String(contentsOf: await store.fileURL, encoding: .utf8)
         XCTAssertTrue(saved.contains("\"connectOnLaunch\""))
         XCTAssertTrue(saved.contains("\"endpoints\""))
         XCTAssertTrue(saved.contains("\"routes\""))
         XCTAssertTrue(saved.contains("\"gateway\""))
+        XCTAssertTrue(saved.contains("\"cliProxy\""))
         XCTAssertFalse(saved.contains("\"probePath\""))
     }
 
@@ -641,7 +642,7 @@ final class ModelMoorCoreTests: XCTestCase {
         let store = ConfigurationStore(fileURL: fileURL, endpointCredentialLookup: { _ in nil })
         let loaded = try await store.load()
 
-        XCTAssertEqual(loaded.schemaVersion, 2)
+        XCTAssertEqual(loaded.schemaVersion, 3)
         XCTAssertEqual(loaded.tunnels.first?.id, tunnelID)
         XCTAssertEqual(loaded.tunnels.first?.mappings.first?.id, mappingID)
         XCTAssertEqual(loaded.tunnels.first?.connectOnLaunch, false)
@@ -662,6 +663,30 @@ final class ModelMoorCoreTests: XCTestCase {
         let backupAfterFirstLoad = try Data(contentsOf: backupURL)
         _ = try await store.load()
         XCTAssertEqual(try Data(contentsOf: backupURL), backupAfterFirstLoad)
+    }
+
+    func testConfigurationStoreMigratesSchemaTwoAndCreatesBackup() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorSchemaTwo-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("config.json")
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(ModelMoorConfiguration())) as? [String: Any]
+        )
+        object["schemaVersion"] = 2
+        object["cliProxy"] = nil
+        let legacy = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        try legacy.write(to: fileURL)
+
+        let loaded = try await ConfigurationStore(fileURL: fileURL).load()
+
+        XCTAssertEqual(loaded.schemaVersion, 3)
+        XCTAssertFalse(loaded.cliProxy.enabled)
+        XCTAssertEqual(
+            try Data(contentsOf: directory.appendingPathComponent("config.json.v2.backup")),
+            legacy
+        )
     }
 
     func testConfigurationStoreRepairsOnlyCredentiallessLegacySchemaTwoEndpoints() async throws {
@@ -788,6 +813,189 @@ final class ModelMoorCoreTests: XCTestCase {
             "https://api.example.com/openai/v1"
         )
         XCTAssertThrowsError(try EndpointURLResolver.parseDirectBaseURL("http://api.example.com/v1"))
+    }
+
+    func testManagedCLIProxyEndpointIsRestrictedToLoopbackHTTP() throws {
+        let endpointID = UUID()
+        let endpoint = APIEndpointConfiguration.managedCLIProxy(id: endpointID, port: 18_317)
+
+        XCTAssertEqual(
+            try EndpointURLResolver.resolve(endpoint, mappings: [:]).absoluteString,
+            "http://127.0.0.1:18317/v1"
+        )
+        var unsafe = endpoint
+        unsafe.source = .managedCLIProxy(originURL: URL(string: "http://0.0.0.0:18317")!)
+        XCTAssertThrowsError(try ModelMoorConfiguration(endpoints: [unsafe]).validated())
+    }
+
+    func testCLIProxyConfigurationReconcilesManagedEndpointAndRejectsPortConflicts() throws {
+        var configuration = ModelMoorConfiguration(
+            gateway: GatewayConfiguration(enabled: true, listenPort: 17_777),
+            cliProxy: CLIProxyConfiguration(enabled: true, listenPort: 18_317)
+        )
+        configuration.reconcileManagedCLIProxyEndpoint()
+
+        XCTAssertNoThrow(try configuration.validated())
+        XCTAssertEqual(configuration.endpoints.last?.id, configuration.cliProxy.endpointID)
+
+        configuration.gateway.listenPort = configuration.cliProxy.listenPort
+        XCTAssertThrowsError(try configuration.validated())
+    }
+
+    func testCLIProxyRenderedConfigurationKeepsManagementLocalAndDisablesRetries() {
+        let rendered = CLIProxyService.renderedConfiguration(
+            configuration: CLIProxyConfiguration(enabled: true, listenPort: 19_317),
+            apiKey: "sk-internal",
+            authDirectoryURL: URL(fileURLWithPath: "/tmp/modelmoor auths")
+        )
+
+        XCTAssertTrue(rendered.contains("host: \"127.0.0.1\""))
+        XCTAssertTrue(rendered.contains("port: 19317"))
+        XCTAssertTrue(rendered.contains("auth-dir: \"/tmp/modelmoor auths\""))
+        XCTAssertTrue(rendered.contains("allow-remote: false"))
+        XCTAssertTrue(rendered.contains("disable-control-panel: true"))
+        XCTAssertTrue(rendered.contains("request-retry: 0"))
+        XCTAssertTrue(rendered.contains("strategy: \"round-robin\""))
+        XCTAssertFalse(rendered.contains("MANAGEMENT_PASSWORD"))
+    }
+
+    func testCLIProxyAccountMetadataDecoding() throws {
+        let data = Data(#"{"id":"codex-user","auth_index":"abc","name":"codex-user.json","provider":"codex","status":"ready","disabled":false,"email":"user@example.com"}"#.utf8)
+        let account = try JSONDecoder().decode(CLIProxyAccount.self, from: data)
+
+        XCTAssertEqual(account.id, "codex-user")
+        XCTAssertEqual(account.authIndex, "abc")
+        XCTAssertEqual(account.provider, "codex")
+        XCTAssertEqual(account.email, "user@example.com")
+    }
+
+    func testCLIProxyLoginProvidersUseSupportedManagementRoutes() {
+        XCTAssertEqual(CLIProxyLoginProvider.codex.managementPath, "/codex-auth-url?is_webui=true")
+        XCTAssertEqual(CLIProxyLoginProvider.claude.managementPath, "/anthropic-auth-url?is_webui=true")
+        XCTAssertEqual(CLIProxyLoginProvider.antigravity.managementPath, "/antigravity-auth-url?is_webui=true")
+        XCTAssertEqual(CLIProxyLoginProvider.kimi.managementPath, "/kimi-auth-url")
+        XCTAssertEqual(CLIProxyLoginProvider.xai.managementPath, "/xai-auth-url")
+    }
+
+    func testCLIProxySubscriptionProviderFilterIncludesManagedAndExistingGeminiAccounts() {
+        let providers = CLIProxyManagementClient.subscriptionAccountProviders
+
+        XCTAssertTrue(providers.isSuperset(of: [
+            "codex", "claude", "antigravity", "kimi", "xai", "gemini", "gemini-cli"
+        ]))
+        XCTAssertFalse(providers.contains("vertex"))
+        XCTAssertFalse(providers.contains("openai-compatible"))
+    }
+
+    func testCodexBarCredentialConversionExcludesRefreshToken() throws {
+        let source = Data(#"{"access_token":"access-secret","account_id":"account-1","id_token":"identity-secret","refresh_token":"refresh-secret","last_refresh":"2026-08-20T06:00:00Z"}"#.utf8)
+
+        let converted = try CodexBarUsageService.codexAuthData(fromCLIProxyCredential: source)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: converted) as? [String: Any])
+        let tokens = try XCTUnwrap(object["tokens"] as? [String: Any])
+
+        XCTAssertEqual(object["auth_mode"] as? String, "chatgpt")
+        XCTAssertEqual(tokens["access_token"] as? String, "access-secret")
+        XCTAssertEqual(tokens["account_id"] as? String, "account-1")
+        XCTAssertEqual(tokens["id_token"] as? String, "identity-secret")
+        XCTAssertNil(tokens["refresh_token"])
+        XCTAssertFalse(String(decoding: converted, as: UTF8.self).contains("refresh-secret"))
+    }
+
+    func testCodexBarUsageDecodingMapsQuotaWindows() throws {
+        let accountData = Data(#"{"id":"codex-user","name":"codex-user.json","provider":"codex","disabled":false,"email":"fallback@example.com"}"#.utf8)
+        let account = try JSONDecoder().decode(CLIProxyAccount.self, from: accountData)
+        let output = Data(#"[{"provider":"codex","source":"oauth","usage":{"primary":{"usedPercent":27.5,"windowMinutes":300,"resetsAt":"2026-08-20T08:30:00Z","resetDescription":"2:30 PM"},"secondary":{"usedPercent":40,"windowMinutes":10080,"resetsAt":"2026-08-27T06:12:32Z","resetDescription":"Aug 27 at 2:12 PM"},"loginMethod":"plus","accountEmail":"member@example.com","updatedAt":"2026-08-20T06:12:32.123Z"}}]"#.utf8)
+
+        let usage = try CodexBarUsageService.decodeUsage(output, account: account)
+
+        XCTAssertEqual(usage.id, "codex-user")
+        XCTAssertEqual(usage.accountEmail, "member@example.com")
+        XCTAssertEqual(usage.loginMethod, "plus")
+        XCTAssertEqual(usage.primary?.usedPercent, 27.5)
+        XCTAssertEqual(usage.primary?.remainingPercent, 72.5)
+        XCTAssertEqual(usage.secondary?.windowMinutes, 10_080)
+        XCTAssertNotNil(usage.updatedAt)
+        XCTAssertNil(usage.errorMessage)
+    }
+
+    func testCLIProxyAccountStatusUpdateTargetsTheExactRuntimeAccount() async throws {
+        await CLIProxyRequestRecorder.shared.reset()
+        let accountData = Data(#"{"id":"codex-user","auth_index":"runtime-7","name":"codex-user.json","provider":"codex","disabled":false}"#.utf8)
+        let account = try JSONDecoder().decode(CLIProxyAccount.self, from: accountData)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CLIProxyURLProtocolStub.self]
+        let client = CLIProxyManagementClient(
+            port: 18_317,
+            managementPassword: "management-secret",
+            session: URLSession(configuration: configuration)
+        )
+
+        try await client.setAccountDisabled(account, disabled: true)
+
+        let recordedRequest = await CLIProxyRequestRecorder.shared.lastRequest
+        let request = try XCTUnwrap(recordedRequest)
+        XCTAssertEqual(request.httpMethod, "PATCH")
+        XCTAssertEqual(request.url?.path, "/v0/management/auth-files/status")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer management-secret")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        let recordedBody = await CLIProxyRequestRecorder.shared.lastBody
+        let body = try XCTUnwrap(recordedBody)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(object["name"] as? String, "codex-user.json")
+        XCTAssertEqual(object["auth_index"] as? String, "runtime-7")
+        XCTAssertEqual(object["disabled"] as? Bool, true)
+    }
+
+    func testCLIProxyServiceStartsPinnedHelperWhenProvided() async {
+        guard let binary = ProcessInfo.processInfo.environment["MODELMOOR_CLIPROXY_BINARY"] else {
+            return
+        }
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorCLIProxy-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let port: Int
+        do {
+            port = try availableLoopbackPortForSidecar()
+        } catch {
+            return XCTFail("Could not allocate a smoke-test port: \(error.localizedDescription)")
+        }
+        let service = CLIProxyService(
+            binaryURL: URL(fileURLWithPath: binary),
+            dataDirectoryURL: directory
+        )
+
+        do {
+            try await service.start(
+                configuration: CLIProxyConfiguration(enabled: true, listenPort: port),
+                apiKey: "sk-modelmoor-smoke",
+                managementPassword: "management-smoke-secret"
+            )
+        } catch {
+            return XCTFail("Helper startup failed: \(error.localizedDescription)")
+        }
+        let runningState = await service.state
+        XCTAssertEqual(runningState, .running(port: port))
+        let rootAttributes = try? FileManager.default.attributesOfItem(atPath: directory.path)
+        let configAttributes = try? FileManager.default.attributesOfItem(
+            atPath: directory.appendingPathComponent("config.yaml").path
+        )
+        XCTAssertEqual((rootAttributes?[.posixPermissions] as? NSNumber)?.intValue, 0o700)
+        XCTAssertEqual((configAttributes?[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        let accounts: [CLIProxyAccount]
+        do {
+            accounts = try await CLIProxyManagementClient(
+                port: port,
+                managementPassword: "management-smoke-secret"
+            ).accounts()
+        } catch {
+            await service.stop()
+            return XCTFail("Management API failed: \(error.localizedDescription)")
+        }
+        XCTAssertTrue(accounts.isEmpty)
+        await service.stop()
+        let stoppedState = await service.state
+        XCTAssertEqual(stoppedState, .stopped)
     }
 
     func testDeepSeekPresetUsesDirectHTTPSWithoutPersistingASecret() throws {
@@ -1023,6 +1231,159 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(url.path, "/tmp/modelmoor-test-config.json")
     }
 
+    func testConfigurationPathUsesXDGHomeAndProductionFilename() {
+        let home = URL(fileURLWithPath: "/Users/modelmoor-path-test", isDirectory: true)
+        XCTAssertEqual(
+            ConfigurationStore.defaultURL(
+                environment: ["XDG_CONFIG_HOME": "/Volumes/Config Home"],
+                homeDirectory: home
+            ).path,
+            "/Volumes/Config Home/modelmoor/config.json"
+        )
+        XCTAssertEqual(
+            ConfigurationStore.defaultURL(
+                environment: ["XDG_CONFIG_HOME": "relative-config"],
+                homeDirectory: home
+            ).path,
+            "/Users/modelmoor-path-test/.config/modelmoor/config.json"
+        )
+    }
+
+    func testDevelopmentRuntimeProfileIsFullySeparatedFromProduction() {
+        let home = URL(fileURLWithPath: "/Users/modelmoor-profile-test", isDirectory: true)
+        let production = ModelMoorRuntimeProfile.make(
+            .production,
+            homeDirectory: home,
+            userID: 501
+        )
+        let development = ModelMoorRuntimeProfile.make(
+            .development,
+            homeDirectory: home,
+            userID: 501
+        )
+
+        XCTAssertEqual(production.displayName, "ModelMoor")
+        XCTAssertEqual(development.displayName, "ModelMoor Dev")
+        XCTAssertEqual(production.configurationURL.path, "/Users/modelmoor-profile-test/.config/modelmoor/config.json")
+        XCTAssertEqual(development.configurationURL.path, "/Users/modelmoor-profile-test/.config/modelmoor/config.dev.json")
+        XCTAssertEqual(
+            production.legacyConfigurationURL?.path,
+            "/Users/modelmoor-profile-test/Library/Application Support/ModelMoor/config.json"
+        )
+        XCTAssertEqual(
+            development.legacyConfigurationURL?.path,
+            "/Users/modelmoor-profile-test/Library/Application Support/ModelMoor Dev/config.json"
+        )
+        XCTAssertNotEqual(production.configurationURL, development.configurationURL)
+        XCTAssertNotEqual(production.tokenUsageURL, development.tokenUsageURL)
+        XCTAssertNotEqual(production.cliProxyDataDirectoryURL, development.cliProxyDataDirectoryURL)
+        XCTAssertNotEqual(production.keychainService, development.keychainService)
+        XCTAssertNotEqual(production.runtimeDirectoryURL, development.runtimeDirectoryURL)
+        XCTAssertEqual(production.defaultGatewayPort, 17_777)
+        XCTAssertEqual(development.defaultGatewayPort, 27_777)
+        XCTAssertEqual(production.defaultCLIProxyPort, 18_317)
+        XCTAssertEqual(development.defaultCLIProxyPort, 28_317)
+        XCTAssertTrue(production.supportsLaunchAtLogin)
+        XCTAssertFalse(development.supportsLaunchAtLogin)
+        XCTAssertTrue(production.supportsSoftwareUpdates)
+        XCTAssertFalse(development.supportsSoftwareUpdates)
+    }
+
+    func testExplicitConfigurationOverrideDisablesLegacyImport() {
+        let home = URL(fileURLWithPath: "/Users/modelmoor-profile-test", isDirectory: true)
+        let profile = ModelMoorRuntimeProfile.make(
+            .development,
+            homeDirectory: home,
+            configurationOverrideURL: URL(fileURLWithPath: "/tmp/explicit-modelmoor.json"),
+            userID: 501
+        )
+
+        XCTAssertEqual(profile.configurationURL.path, "/tmp/explicit-modelmoor.json")
+        XCTAssertNil(profile.legacyConfigurationURL)
+    }
+
+    func testConfigurationStoreCopiesLegacyConfigurationWithoutChangingIt() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorLegacyImport-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let legacyURL = directory
+            .appendingPathComponent("Library/Application Support/ModelMoor/config.json")
+        let targetURL = directory.appendingPathComponent(".config/modelmoor/config.json")
+        try FileManager.default.createDirectory(
+            at: legacyURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let expected = ModelMoorConfiguration(tunnels: [
+            TunnelConfiguration(name: "Imported", sshHost: "imported.example")
+        ])
+        let originalData = try JSONEncoder().encode(expected)
+        try originalData.write(to: legacyURL)
+        let store = ConfigurationStore(
+            fileURL: targetURL,
+            legacyImportURL: legacyURL,
+            endpointCredentialLookup: { _ in nil }
+        )
+
+        let imported = try await store.load()
+
+        XCTAssertEqual(imported, expected)
+        XCTAssertEqual(try Data(contentsOf: legacyURL), originalData)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: targetURL.path))
+        let targetPermissions = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: targetURL.path)[.posixPermissions] as? NSNumber
+        )
+        XCTAssertEqual(targetPermissions.intValue & 0o777, 0o600)
+    }
+
+    func testExistingXDGConfigurationWinsOverLegacyConfiguration() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorExistingXDG-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let legacyURL = directory.appendingPathComponent("legacy.json")
+        let targetURL = directory.appendingPathComponent("xdg/config.json")
+        try FileManager.default.createDirectory(
+            at: targetURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let legacy = ModelMoorConfiguration(tunnels: [
+            TunnelConfiguration(name: "Legacy", sshHost: "legacy.example")
+        ])
+        let expected = ModelMoorConfiguration(tunnels: [
+            TunnelConfiguration(name: "XDG", sshHost: "xdg.example")
+        ])
+        try JSONEncoder().encode(legacy).write(to: legacyURL)
+        try JSONEncoder().encode(expected).write(to: targetURL)
+        let store = ConfigurationStore(
+            fileURL: targetURL,
+            legacyImportURL: legacyURL,
+            endpointCredentialLookup: { _ in nil }
+        )
+
+        let loaded = try await store.load()
+        XCTAssertEqual(loaded, expected)
+    }
+
+    func testConfigurationStoreUsesProfileSpecificInitialPorts() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorProfile-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let profile = ModelMoorRuntimeProfile.make(
+            .development,
+            homeDirectory: directory,
+            userID: 501
+        )
+        let store = ConfigurationStore(
+            fileURL: profile.configurationURL,
+            initialConfiguration: profile.initialConfiguration,
+            endpointCredentialLookup: { _ in nil }
+        )
+
+        let configuration = try await store.load()
+
+        XCTAssertEqual(configuration.gateway.listenPort, 27_777)
+        XCTAssertEqual(configuration.cliProxy.listenPort, 28_317)
+    }
+
     func testOpenAIModelListDecoding() throws {
         let data = Data("""
         {
@@ -1177,6 +1538,60 @@ private actor TunnelStatusRecorder {
     }
 }
 
+private actor CLIProxyRequestRecorder {
+    static let shared = CLIProxyRequestRecorder()
+    private(set) var lastRequest: URLRequest?
+    private(set) var lastBody: Data?
+
+    func record(_ request: URLRequest, body: Data?) {
+        lastRequest = request
+        lastBody = body
+    }
+
+    func reset() {
+        lastRequest = nil
+        lastBody = nil
+    }
+}
+
+private final class CLIProxyURLProtocolStub: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool { true }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let capturedRequest = request
+        let body = capturedRequest.httpBody ?? capturedRequest.httpBodyStream.flatMap(readData)
+        Task {
+            await CLIProxyRequestRecorder.shared.record(capturedRequest, body: body)
+            let response = HTTPURLResponse(
+                url: capturedRequest.url!,
+                statusCode: 200,
+                httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(#"{"status":"ok"}"#.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    override func stopLoading() {}
+
+    private func readData(from stream: InputStream) -> Data {
+        stream.open()
+        defer { stream.close() }
+        var result = Data()
+        var buffer = [UInt8](repeating: 0, count: 1_024)
+        while true {
+            let count = stream.read(&buffer, maxLength: buffer.count)
+            guard count > 0 else { break }
+            result.append(buffer, count: count)
+        }
+        return result
+    }
+}
+
 private final class FakeEndpointSecretStore: EndpointSecretStore, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [UUID: String]
@@ -1204,6 +1619,31 @@ private func XCTAssertThrowsErrorAsync<T>(
     } catch {
         errorHandler(error)
     }
+}
+
+private func availableLoopbackPortForSidecar() throws -> Int {
+    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    defer { close(descriptor) }
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = 0
+    address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+    let bound = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+    }
+    guard bound == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+    var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+    let resolved = withUnsafeMutablePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            getsockname(descriptor, $0, &length)
+        }
+    }
+    guard resolved == 0 else { throw POSIXError(.EIO) }
+    return Int(UInt16(bigEndian: address.sin_port))
 }
 
 private func waitForPhase(

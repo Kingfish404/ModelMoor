@@ -23,10 +23,12 @@ struct EndpointDetailView: View {
                             models(binding.wrappedValue)
                             unifiedAPI(binding.wrappedValue)
                         }
-                        advanced(binding)
-                        Section {
-                            Button(model.isRecognizedLLMEndpoint(binding.wrappedValue) ? "Delete API Endpoint…" : "Delete Other Service…", role: .destructive) {
-                                showsDeleteConfirmation = true
+                        if !isManaged(binding.wrappedValue) {
+                            advanced(binding)
+                            Section {
+                                Button(model.isRecognizedLLMEndpoint(binding.wrappedValue) ? "Delete API Endpoint…" : "Delete Other Service…", role: .destructive) {
+                                    showsDeleteConfirmation = true
+                                }
                             }
                         }
                     }
@@ -100,6 +102,7 @@ struct EndpointDetailView: View {
             LabeledContent("Source", value: sourceType(endpoint.wrappedValue))
             LabeledContent("Preset", value: presetName(endpoint.wrappedValue.kind))
             Toggle("Endpoint enabled", isOn: endpoint.enabled)
+                .disabled(isManaged(endpoint.wrappedValue))
         }
     }
 
@@ -114,6 +117,16 @@ struct EndpointDetailView: View {
                         Text(url.absoluteString).font(.callout.monospaced()).textSelection(.enabled)
                     }
                 }
+            case let .managedCLIProxy(origin):
+                LabeledContent("Managed helper", value: "CLIProxyAPI")
+                LabeledContent("Loopback origin", value: origin.absoluteString)
+                Text("Provider credentials are managed in Subscription.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Manage Subscription") {
+                    model.showSubscriptionAccounts()
+                }
+                .buttonStyle(.link)
             case let .sshMapping(mappingID, _):
                 if let connection = connectionForMapping(mappingID),
                    let mapping = connection.mappings.first(where: { $0.id == mappingID }) {
@@ -134,7 +147,11 @@ struct EndpointDetailView: View {
     private func authentication(_ endpoint: APIEndpointConfiguration) -> some View {
         Section("Authentication") {
             LabeledContent("Method", value: authenticationName(endpoint.authentication))
-            if endpoint.authentication != .none {
+            if isManaged(endpoint) {
+                Text("The internal loopback key is generated from Keychain into the helper's private configuration.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if endpoint.authentication != .none {
                 EndpointTokenEditor(endpointID: endpoint.id)
                     .environmentObject(model)
             }
@@ -258,6 +275,11 @@ struct EndpointDetailView: View {
     }
 
     private var routeCount: Int { model.configuration.routes.filter { $0.endpointID == endpointID }.count }
+
+    private func isManaged(_ endpoint: APIEndpointConfiguration) -> Bool {
+        if case .managedCLIProxy = endpoint.source { return true }
+        return false
+    }
     private var deleteConfirmationTitle: String {
         original.map(model.isRecognizedLLMEndpoint) == false ? "Delete this other service?" : "Delete this API endpoint?"
     }
@@ -283,6 +305,7 @@ struct EndpointDetailView: View {
     private func sourceSummary(_ endpoint: APIEndpointConfiguration) -> String {
         switch endpoint.source {
         case let .directHTTPS(origin): "Direct HTTPS, \(origin.host ?? origin.absoluteString)"
+        case .managedCLIProxy: "Managed subscription proxy on this Mac"
         case let .sshMapping(mappingID, _): "Remote over SSH, \(connectionForMapping(mappingID)?.name ?? "missing connection")"
         }
     }
@@ -290,6 +313,7 @@ struct EndpointDetailView: View {
     private func sourceType(_ endpoint: APIEndpointConfiguration) -> String {
         switch endpoint.source {
         case .directHTTPS: "Direct HTTPS API"
+        case .managedCLIProxy: "Managed subscription proxy"
         case .sshMapping: "Remote over SSH"
         }
     }

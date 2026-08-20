@@ -1,4 +1,5 @@
 import AppKit
+import ModelMoorCore
 import SwiftUI
 
 @main
@@ -20,7 +21,7 @@ struct ModelMoorApp: App {
                 Button("Check for Updates…") {
                     lifecycle.checkForUpdates()
                 }
-                .disabled(lifecycle.updates.isChecking)
+                .disabled(lifecycle.updates.isChecking || !lifecycle.updates.updatesAvailable)
             }
 
             CommandGroup(replacing: .sidebar) {
@@ -67,13 +68,13 @@ struct ModelMoorApp: App {
                     guard let id = lifecycle.model.selectedTunnelID else { return }
                     Task { await lifecycle.model.connect(id) }
                 }
-                .disabled(lifecycle.model.selectedTunnelID == nil)
+                .disabled(selectedTunnelPhase?.canConnect != true)
 
                 Button("Disconnect Selected") {
                     guard let id = lifecycle.model.selectedTunnelID else { return }
                     Task { await lifecycle.model.disconnect(id) }
                 }
-                .disabled(lifecycle.model.selectedTunnelID == nil)
+                .disabled(selectedTunnelPhase?.canDisconnect != true)
 
                 Divider()
                 Button("Connect All") { Task { await lifecycle.model.connectAll() } }
@@ -96,5 +97,10 @@ struct ModelMoorApp: App {
         if lifecycle.model.canDuplicateSelectedEndpoint { return "Duplicate API Endpoint" }
         if lifecycle.model.selectedTunnelID != nil { return "Duplicate SSH Connection" }
         return "Duplicate"
+    }
+
+    private var selectedTunnelPhase: TunnelPhase? {
+        guard let id = lifecycle.model.selectedTunnelID else { return nil }
+        return lifecycle.model.status(for: id).phase
     }
 }

@@ -86,6 +86,24 @@ final class GatewayTests: XCTestCase {
         await service.stop()
     }
 
+    func testGatewayTerminatesChunkedResponseWhenUpstreamSSEBreaksMidStream() async throws {
+        let upstream = try LoopbackTruncatedSSEFixture()
+        let gatewayPort = try unusedLoopbackPort()
+        let configured = gatewayFixture(gatewayPort: gatewayPort, upstreamPort: upstream.port)
+        let service = GatewayService()
+        try await service.start(snapshot: configured.snapshot)
+        defer { Task { await service.stop() } }
+
+        let response = try sendRawStreamingGatewayRequest(port: gatewayPort)
+
+        XCTAssertTrue(response.lowercased().contains("transfer-encoding: chunked"))
+        XCTAssertTrue(
+            response.hasSuffix("\r\n0\r\n\r\n"),
+            "A started chunked response must still emit its terminating chunk when the upstream stream fails"
+        )
+        await service.stop()
+    }
+
     func testGatewayPassesThroughOrdinaryJSONAndUpstreamErrorsWithoutRetry() async throws {
         for fixtureResponse in [
             HTTPFixtureResponse(
@@ -263,6 +281,24 @@ final class GatewayTests: XCTestCase {
         XCTAssertEqual(models.map { $0["id"] }, ["fast"])
     }
 
+    func testRouterRebuildsIndexesWhenSnapshotChanges() throws {
+        var router = GatewayRequestRouter(snapshot: makeFixture().snapshot)
+        var updatedSnapshot = router.snapshot
+        updatedSnapshot.configuration.routes[0].publicModel = "precise"
+        router.snapshot = updatedSnapshot
+
+        let decision = router.route(GatewayRequest(
+            method: "GET",
+            uri: "/v1/models",
+            headers: ["Authorization": "Bearer local-token"],
+            body: Data()
+        ))
+        guard case let .local(response) = decision else { return XCTFail("Expected local response") }
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: response.body) as? [String: Any])
+        let models = try XCTUnwrap(json["data"] as? [[String: String]])
+        XCTAssertEqual(models.map { $0["id"] }, ["precise"])
+    }
+
     func testRouteRewritesModelAndIsolatesUpstreamCredential() throws {
         let fixture = makeFixture()
         let router = GatewayRequestRouter(snapshot: fixture.snapshot)
@@ -285,6 +321,41 @@ final class GatewayTests: XCTestCase {
         XCTAssertEqual(prepared.urlRequest.value(forHTTPHeaderField: "Content-Length"), String(body.count))
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["model"] as? String, "deepseek-v4-flash")
+    }
+
+    func testManagedSubscriptionRouteUsesOnlyTheLoopbackSidecar() throws {
+        var configuration = ModelMoorConfiguration(
+            routes: [ModelRouteConfiguration(
+                publicModel: "chatgpt-codex",
+                endpointID: CLIProxyConfiguration.defaultEndpointID,
+                upstreamModel: "gpt-5.4"
+            )],
+            gateway: GatewayConfiguration(enabled: true),
+            cliProxy: CLIProxyConfiguration(enabled: true, listenPort: 18_317)
+        )
+        configuration.reconcileManagedCLIProxyEndpoint()
+        let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
+            configuration: try configuration.validated(),
+            gatewayToken: "local-token",
+            endpointSecrets: [configuration.cliProxy.endpointID: "sidecar-key"]
+        ))
+
+        let decision = router.route(GatewayRequest(
+            method: "POST",
+            uri: "/v1/responses",
+            headers: [
+                "Authorization": "Bearer local-token",
+                "Content-Type": "application/json"
+            ],
+            body: Data(#"{"model":"chatgpt-codex","input":"hello"}"#.utf8)
+        ))
+
+        guard case let .upstream(prepared) = decision else { return XCTFail("Expected sidecar request") }
+        XCTAssertEqual(prepared.urlRequest.url?.absoluteString, "http://127.0.0.1:18317/v1/responses")
+        XCTAssertEqual(prepared.urlRequest.value(forHTTPHeaderField: "Authorization"), "Bearer sidecar-key")
+        let body = try XCTUnwrap(prepared.urlRequest.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["model"] as? String, "gpt-5.4")
     }
 
     func testAuthenticationAndUnknownModelNeverReachUpstream() {
@@ -576,6 +647,33 @@ private final class LoopbackCancellationFixture: @unchecked Sendable {
     }
 }
 
+private final class LoopbackTruncatedSSEFixture: @unchecked Sendable {
+    let port: Int
+    private let listener: Int32
+
+    init() throws {
+        let listening = try makeLoopbackListener()
+        listener = listening.descriptor
+        port = listening.port
+        start()
+    }
+
+    deinit { close(listener) }
+
+    private func start() {
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            let client = accept(listener, nil, nil)
+            guard client >= 0 else { return }
+            defer { close(client) }
+            _ = receiveHTTPRequest(client)
+            sendAll(
+                client,
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: 1024\r\nConnection: close\r\n\r\ndata: partial\n\n"
+            )
+        }
+    }
+}
+
 private final class LoopbackSSEFixture: @unchecked Sendable {
     let port: Int
     private let listener: Int32
@@ -711,6 +809,34 @@ private func gatewayURLRequest(port: Int) -> URLRequest {
     request.setValue("Bearer local-token", forHTTPHeaderField: "Authorization")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     return request
+}
+
+private func sendRawStreamingGatewayRequest(port: Int) throws -> String {
+    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    defer { close(descriptor) }
+    var address = sockaddr_in()
+    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    address.sin_family = sa_family_t(AF_INET)
+    address.sin_port = UInt16(port).bigEndian
+    address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+    let connected = withUnsafePointer(to: &address) { pointer in
+        pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+            Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+        }
+    }
+    guard connected == 0 else { throw POSIXError(.ECONNREFUSED) }
+    let body = #"{"model":"public-model","stream":true,"messages":[]}"#
+    sendAll(descriptor, "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\nAuthorization: Bearer local-token\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)")
+
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 4_096)
+    while data.count < 128 * 1_024 {
+        let count = recv(descriptor, &buffer, buffer.count, 0)
+        if count <= 0 { break }
+        data.append(contentsOf: buffer.prefix(count))
+    }
+    return String(decoding: data, as: UTF8.self)
 }
 
 private func sendStreamingGatewayRequest(port: Int, firstEventAtClient: TestSignal) throws -> String {

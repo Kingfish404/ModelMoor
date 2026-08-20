@@ -342,6 +342,7 @@ private final class GatewayResponseWriter: @unchecked Sendable {
         cancellation: UpstreamTaskCancellation
     ) async {
         var responseStarted = false
+        var responseIsEventStream = false
         do {
             let (bytes, response) = try await session.bytes(for: request.urlRequest, delegate: cancellation)
             guard let response = response as? HTTPURLResponse else {
@@ -365,6 +366,7 @@ private final class GatewayResponseWriter: @unchecked Sendable {
             let isEventStream = response.value(forHTTPHeaderField: "Content-Type")?
                 .lowercased()
                 .hasPrefix("text/event-stream") == true
+            responseIsEventStream = isEventStream
             var usageTokens: Int64?
             var usageBody = Data()
             var usageBodyOverflowed = false
@@ -413,7 +415,17 @@ private final class GatewayResponseWriter: @unchecked Sendable {
         } catch {
             if Task.isCancelled { return }
             if responseStarted {
-                await close()
+                if responseIsEventStream {
+                    // Once NIO has started an HTTP/1.1 response without a content
+                    // length, closing the socket omits the terminating chunk and
+                    // Chromium reports ERR_INCOMPLETE_CHUNKED_ENCODING. Finish the
+                    // downstream framing so the client can handle an ended SSE at
+                    // the protocol layer even when the upstream ended badly.
+                    await finish()
+                } else {
+                    // Do not disguise a truncated JSON response as a complete one.
+                    await close()
+                }
             } else {
                 await writeLocal(GatewayLocalResponse(
                     status: 502,

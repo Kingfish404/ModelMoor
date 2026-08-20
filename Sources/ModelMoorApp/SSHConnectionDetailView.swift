@@ -84,13 +84,17 @@ struct SSHConnectionDetailView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Button(status.phase == .connected ? "Disconnect" : "Connect") {
+            Button(status.phase.connectionActionTitle) {
                 Task {
-                    if status.phase == .connected { await model.disconnect(connection.id) }
+                    if status.phase.usesDisconnectAction { await model.disconnect(connection.id) }
                     else { await model.connect(connection.id) }
                 }
             }
             .buttonStyle(.borderedProminent)
+            .disabled(
+                status.phase.isConnectionActionPending
+                    || (!status.phase.usesDisconnectAction && connection.enabledMappings.isEmpty)
+            )
             Button("Run Diagnostics") { Task { await model.inspectMappings(in: connection.id) } }
         }
         .padding(.horizontal, 24)

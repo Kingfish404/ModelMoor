@@ -7,7 +7,7 @@ struct MenuBarView: View {
     @EnvironmentObject private var updates: UpdateController
 
     var body: some View {
-        Label("ModelMoor, \(overallStatus)", systemImage: model.menuBarSymbol).disabled(true)
+        Label("\(model.runtimeProfile.displayName), \(overallStatus)", systemImage: model.menuBarSymbol).disabled(true)
 
         if model.configuration.gateway.enabled { gatewayMenu }
         endpointMenu
@@ -24,7 +24,7 @@ struct MenuBarView: View {
         .disabled(model.configuration.endpoints.isEmpty || !model.inspectingEndpointIDs.isEmpty)
 
         Button { lifecycle.showMainWindow() } label: {
-            Label("Open ModelMoor", systemImage: "macwindow")
+            Label("Open \(model.runtimeProfile.displayName)", systemImage: "macwindow")
         }
         if let release = updates.availableRelease {
             Button {
@@ -32,7 +32,7 @@ struct MenuBarView: View {
             } label: {
                 Label("Update to \(release.tagName)…", systemImage: "arrow.down.circle.fill")
             }
-        } else {
+        } else if updates.updatesAvailable {
             Button {
                 lifecycle.checkForUpdates()
             } label: {
@@ -45,7 +45,7 @@ struct MenuBarView: View {
             lifecycle.showMainWindow()
         }
         Divider()
-        Button("Quit ModelMoor") { lifecycle.quit() }
+        Button("Quit \(model.runtimeProfile.displayName)") { lifecycle.quit() }
     }
 
     private var gatewayMenu: some View {
@@ -143,16 +143,20 @@ struct MenuBarView: View {
                 }
             } else {
                 ForEach(model.configuration.tunnels) { connection in
+                    let phase = model.status(for: connection.id).phase
                     Menu {
                         Text(model.status(for: connection.id).message).disabled(true)
                         Divider()
-                        Button(connectionActionTitle(connection)) {
+                        Button(phase.connectionActionTitle) {
                             Task {
-                                if isActive(connection) { await model.disconnect(connection.id) }
+                                if phase.usesDisconnectAction { await model.disconnect(connection.id) }
                                 else { await model.connect(connection.id) }
                             }
                         }
-                        .disabled(connection.enabledMappings.isEmpty)
+                        .disabled(
+                            phase.isConnectionActionPending
+                                || (!phase.usesDisconnectAction && connection.enabledMappings.isEmpty)
+                        )
                         Button("Show in ModelMoor") {
                             model.showConnection(connection.id)
                             lifecycle.showMainWindow()
@@ -245,17 +249,6 @@ struct MenuBarView: View {
         if model.inspectingEndpointIDs.contains(endpoint.id) { return "arrow.triangle.2.circlepath" }
         guard let inspection = model.inspections[endpoint.id] else { return "questionmark.circle" }
         return inspection.errorMessage == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-    }
-
-    private func isActive(_ connection: TunnelConfiguration) -> Bool {
-        switch model.status(for: connection.id).phase {
-        case .waitingForNetwork, .connecting, .connected, .disconnecting, .waitingToRetry: true
-        case .stopped, .failed: false
-        }
-    }
-
-    private func connectionActionTitle(_ connection: TunnelConfiguration) -> String {
-        isActive(connection) ? "Disconnect" : (model.status(for: connection.id).phase == .failed ? "Retry" : "Connect")
     }
 
     private func connectionSymbol(_ connection: TunnelConfiguration) -> String {

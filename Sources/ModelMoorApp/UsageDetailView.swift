@@ -26,12 +26,15 @@ struct UsageDetailView: View {
             .padding(28)
         }
         .navigationTitle("Usage")
-        .refreshable { await reload() }
+        .refreshable { await reload(showProgress: false) }
         .task(id: refreshQuery) {
             guard model.isUIRefreshActive else { return }
+            selectedTimestamp = nil
+            await reload(showProgress: true)
             while !Task.isCancelled {
-                await reload()
                 try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled else { return }
+                await reload(showProgress: false)
             }
         }
         .onChange(of: endpointID) { _, endpointID in
@@ -264,9 +267,11 @@ struct UsageDetailView: View {
         }
     }
 
-    private func reload() async {
-        if report == nil { isLoading = true }
-        defer { isLoading = false }
+    private func reload(showProgress: Bool) async {
+        if showProgress { isLoading = true }
+        defer {
+            if showProgress { isLoading = false }
+        }
         let endDate = Date()
         let value = await model.tokenUsageReport(
             from: endDate.addingTimeInterval(-timeRange.duration),
@@ -276,7 +281,6 @@ struct UsageDetailView: View {
             endpointID: endpointID
         )
         guard !Task.isCancelled else { return }
-        selectedTimestamp = nil
         report = value
         loadFailed = value == nil
     }

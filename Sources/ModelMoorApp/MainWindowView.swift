@@ -19,7 +19,7 @@ struct MainWindowView: View {
                 .environmentObject(model)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 250, max: 320)
         } detail: {
-            detail
+            detailPane
         }
         .frame(minWidth: 860, minHeight: 600)
         .toolbar { toolbar }
@@ -59,13 +59,36 @@ struct MainWindowView: View {
     }
 
     @ViewBuilder
-    private var detail: some View {
+    private var detailPane: some View {
+        VStack(spacing: 0) {
+            if let errorMessage = model.errorMessage {
+                ErrorBanner(message: errorMessage, dismiss: model.dismissError)
+                Divider()
+            }
+
+            if model.isLoaded {
+                selectedDetail
+            } else {
+                ProgressView("Loading ModelMoor…")
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .accessibilityLabel("Loading ModelMoor configuration")
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private var selectedDetail: some View {
         switch selection ?? .overview {
         case .overview:
             OverviewView(addEndpoint: { showsAddEndpoint = true }, selection: $selection)
                 .environmentObject(model)
         case let .endpoint(id):
             EndpointDetailView(endpointID: id, manageModels: { showsAddModels = true })
+                .environmentObject(model)
+        case .subscriptionAccounts:
+            SubscriptionAccountsView(configureModels: showSubscriptionModels)
                 .environmentObject(model)
         case .gateway:
             GatewayDetailView(addEndpoint: { showsAddEndpoint = true }, addModels: { showsAddModels = true })
@@ -113,16 +136,31 @@ struct MainWindowView: View {
                     Label("Add models", systemImage: "plus")
                 }
                 .disabled(!model.configuration.endpoints.contains { $0.enabled && $0.kind == .openAICompatible })
+            case .subscriptionAccounts:
+                Button {
+                    Task { await model.refreshSubscriptionAccountState() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .disabled(model.isRefreshingSubscriptionAccounts)
+                Button(action: showSubscriptionModels) {
+                    Label("Configure models", systemImage: "cube.transparent")
+                }
+                .disabled(subscriptionModelCount == 0)
             case let .connection(id):
                 let phase = model.status(for: id).phase
                 Button {
                     Task {
-                        if phase == .connected { await model.disconnect(id) }
+                        if phase.usesDisconnectAction { await model.disconnect(id) }
                         else { await model.connect(id) }
                     }
                 } label: {
-                    Label(phase == .connected ? "Disconnect" : "Connect", systemImage: phase == .connected ? "stop.fill" : "play.fill")
+                    Label(
+                        phase.connectionActionTitle,
+                        systemImage: phase.usesDisconnectAction ? "stop.fill" : "play.fill"
+                    )
                 }
+                .disabled(phase.isConnectionActionPending || !connectionCanStart(id, phase: phase))
                 Button { Task { await model.inspectMappings(in: id) } } label: {
                     Label("Run diagnostics", systemImage: "stethoscope")
                 }
@@ -140,9 +178,44 @@ struct MainWindowView: View {
         case let .connection(id):
             model.selectedEndpointID = nil
             model.selectedTunnelID = id
-        case .overview, .gateway, .usage, .settings, nil:
+        case .overview, .subscriptionAccounts, .gateway, .usage, .settings, nil:
             model.selectedEndpointID = nil
             model.selectedTunnelID = nil
         }
+    }
+
+    private var subscriptionModelCount: Int {
+        model.inspections[model.configuration.cliProxy.endpointID]?.models?.count ?? 0
+    }
+
+    private func showSubscriptionModels() {
+        model.preferredModelEndpointID = model.configuration.cliProxy.endpointID
+        showsAddModels = true
+    }
+
+    private func connectionCanStart(_ id: UUID, phase: TunnelPhase) -> Bool {
+        if phase.usesDisconnectAction { return true }
+        return model.configuration.tunnels.first(where: { $0.id == id })?.enabledMappings.isEmpty == false
+    }
+}
+
+private struct ErrorBanner: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+            Text(message)
+                .font(.callout)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Dismiss", action: dismiss)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.orange.opacity(0.08))
     }
 }

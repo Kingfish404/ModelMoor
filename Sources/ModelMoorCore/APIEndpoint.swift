@@ -16,13 +16,14 @@ public enum APIEndpointKind: String, Codable, CaseIterable, Equatable, Sendable 
 public enum APIEndpointSource: Codable, Equatable, Sendable {
     case sshMapping(mappingID: UUID, originScheme: EndpointScheme)
     case directHTTPS(originURL: URL)
+    case managedCLIProxy(originURL: URL)
 
     private enum CodingKeys: String, CodingKey {
         case type, mappingID, originScheme, originURL
     }
 
     private enum SourceType: String, Codable {
-        case sshMapping, directHTTPS
+        case sshMapping, directHTTPS, managedCLIProxy
     }
 
     public init(from decoder: Decoder) throws {
@@ -35,6 +36,8 @@ public enum APIEndpointSource: Codable, Equatable, Sendable {
             )
         case .directHTTPS:
             self = .directHTTPS(originURL: try container.decode(URL.self, forKey: .originURL))
+        case .managedCLIProxy:
+            self = .managedCLIProxy(originURL: try container.decode(URL.self, forKey: .originURL))
         }
     }
 
@@ -47,6 +50,9 @@ public enum APIEndpointSource: Codable, Equatable, Sendable {
             try container.encode(originScheme, forKey: .originScheme)
         case let .directHTTPS(originURL):
             try container.encode(SourceType.directHTTPS, forKey: .type)
+            try container.encode(originURL, forKey: .originURL)
+        case let .managedCLIProxy(originURL):
+            try container.encode(SourceType.managedCLIProxy, forKey: .type)
             try container.encode(originURL, forKey: .originURL)
         }
     }
@@ -212,6 +218,26 @@ public struct APIEndpointConfiguration: Codable, Equatable, Identifiable, Sendab
         return endpoints
     }
 
+    public static func managedCLIProxy(
+        id: UUID,
+        port: Int,
+        name: String = "Subscription Accounts"
+    ) -> Self {
+        Self(
+            id: id,
+            name: name,
+            source: .managedCLIProxy(originURL: URL(string: "http://127.0.0.1:\(port)")!),
+            kind: .openAICompatible,
+            basePath: "/v1",
+            healthPath: "/v1/models",
+            modelListPath: "/v1/models",
+            pollIntervalSeconds: 30,
+            authentication: .bearer,
+            apiKeys: [EndpointAPIKeyConfiguration(id: id, name: "Managed sidecar key")],
+            activeAPIKeyID: id
+        )
+    }
+
     public func validated(mappingIDs: Set<UUID>) throws -> Self {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ConfigurationError.invalidValue("Endpoint name cannot be empty.")
@@ -231,6 +257,8 @@ public struct APIEndpointConfiguration: Codable, Equatable, Identifiable, Sendab
             }
         case let .directHTTPS(originURL):
             try EndpointURLResolver.validateDirectOrigin(originURL)
+        case let .managedCLIProxy(originURL):
+            try EndpointURLResolver.validateManagedOrigin(originURL)
         }
         if case let .header(name) = authentication {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -392,6 +420,9 @@ public enum EndpointURLResolver {
         case let .directHTTPS(originURL):
             try validateDirectOrigin(originURL)
             origin = originURL
+        case let .managedCLIProxy(originURL):
+            try validateManagedOrigin(originURL)
+            origin = originURL
         }
 
         guard var components = URLComponents(url: origin, resolvingAgainstBaseURL: false) else {
@@ -431,6 +462,22 @@ public enum EndpointURLResolver {
               components.query == nil,
               components.fragment == nil else {
             throw ConfigurationError.invalidValue("Direct endpoint origin must be an HTTPS origin without credentials, path, query, or fragment.")
+        }
+    }
+
+    static func validateManagedOrigin(_ url: URL) throws {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.scheme?.lowercased() == "http",
+              let host = components.host?.lowercased(),
+              host == "127.0.0.1" || host == "localhost" || host == "::1",
+              let port = components.port,
+              (1_024...65_535).contains(port),
+              components.user == nil,
+              components.password == nil,
+              components.path.isEmpty,
+              components.query == nil,
+              components.fragment == nil else {
+            throw ConfigurationError.invalidValue("Managed CLIProxyAPI origin must be a loopback HTTP origin with an explicit port.")
         }
     }
 

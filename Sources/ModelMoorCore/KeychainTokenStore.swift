@@ -28,16 +28,23 @@ public struct GatewayCredentialAccessPlan: Equatable, Sendable {
 }
 
 public struct KeychainTokenStore: Sendable, EndpointSecretStore {
+    public static let productionService = "com.modelmoor.api-token"
+    public static let legacyProductionService = "dev.modelmoor.api-token"
     public static let gatewayAccount = "gateway-client-token"
+    public static let cliProxyManagementAccount = "cliproxy-management-password"
     public static let gatewayAPIKeyPrefix = "sk-"
     public var service: String
+    public var fallbackServices: [String]
     public var userInteraction: KeychainUserInteraction
 
     public init(
-        service: String = "dev.modelmoor.api-token",
+        service: String = Self.productionService,
+        fallbackServices: [String]? = nil,
         userInteraction: KeychainUserInteraction = .allow
     ) {
         self.service = service
+        self.fallbackServices = fallbackServices
+            ?? (service == Self.productionService ? [Self.legacyProductionService] : [])
         self.userInteraction = userInteraction
     }
 
@@ -49,6 +56,24 @@ public struct KeychainTokenStore: Sendable, EndpointSecretStore {
 
     public func token(for endpointID: UUID) throws -> String? {
         try token(account: endpointID.uuidString)
+    }
+
+    public func ensureToken(for endpointID: UUID) throws -> String {
+        if let existing = try token(for: endpointID), !existing.isEmpty { return existing }
+        let generated = try makeSecureToken()
+        try setToken(generated, for: endpointID)
+        return generated
+    }
+
+    public func cliProxyManagementPassword() throws -> String? {
+        try token(account: Self.cliProxyManagementAccount)
+    }
+
+    public func ensureCLIProxyManagementPassword() throws -> String {
+        if let existing = try cliProxyManagementPassword(), !existing.isEmpty { return existing }
+        let generated = try makeSecureToken()
+        try setToken(generated, account: Self.cliProxyManagementAccount)
+        return generated
     }
 
     public func gatewayToken() throws -> String? {
@@ -105,6 +130,14 @@ public struct KeychainTokenStore: Sendable, EndpointSecretStore {
     }
 
     private func token(account: String) throws -> String? {
+        if let current = try token(account: account, service: service) { return current }
+        for fallbackService in fallbackServices where fallbackService != service {
+            if let fallback = try token(account: account, service: fallbackService) { return fallback }
+        }
+        return nil
+    }
+
+    private func token(account: String, service: String) throws -> String? {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

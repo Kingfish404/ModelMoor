@@ -81,7 +81,16 @@ struct AddUnifiedModelsSheet: View {
             .padding(16)
         }
         .frame(width: 620, height: 520)
-        .onAppear { endpointID = endpointID ?? eligibleEndpoints.first?.id }
+        .onAppear {
+            if endpointID == nil,
+               let preferred = model.preferredModelEndpointID,
+               eligibleEndpoints.contains(where: { $0.id == preferred }) {
+                endpointID = preferred
+            } else {
+                endpointID = endpointID ?? eligibleEndpoints.first?.id
+            }
+            model.preferredModelEndpointID = nil
+        }
         .onChange(of: endpointID) { _, _ in
             selectedModels.removeAll()
             publicNames.removeAll()
