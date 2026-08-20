@@ -44,7 +44,7 @@ public enum GatewayRouteDecision: Sendable {
     case upstream(GatewayPreparedRequest)
 }
 
-public struct GatewaySnapshot: Sendable {
+public struct GatewaySnapshot: Equatable, Sendable {
     public var configuration: ModelMoorConfiguration
     public var gatewayAPIKeys: [String]
     public var endpointSecrets: [UUID: String]

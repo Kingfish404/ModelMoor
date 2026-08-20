@@ -176,7 +176,13 @@ final class GatewayTests: XCTestCase {
             try await second.start(snapshot: snapshot)
             XCTFail("A second Gateway must not bind an occupied port")
         } catch {
-            guard case .failed = second.state else { return XCTFail("Expected failed Gateway state") }
+            guard case let .failed(message) = second.state else { return XCTFail("Expected failed Gateway state") }
+            XCTAssertEqual(
+                message,
+                "Unified API couldn't start because local port \(port) is already in use."
+            )
+            XCTAssertEqual(error.localizedDescription, message)
+            XCTAssertFalse(message.contains("NIOCore.IOError"))
         }
 
         await first.stop()
@@ -184,6 +190,35 @@ final class GatewayTests: XCTestCase {
         try await second.start(snapshot: snapshot)
         XCTAssertEqual(second.state, .running(port: port))
         await second.stop()
+    }
+
+    func testGatewayCoordinatorCoalescesConcurrentReconciliations() async throws {
+        let port = try unusedLoopbackPort()
+        let fixture = makeFixture()
+        var configuration = fixture.snapshot.configuration
+        configuration.gateway = GatewayConfiguration(enabled: true, listenPort: port)
+        let snapshot = GatewaySnapshot(
+            configuration: configuration,
+            gatewayToken: "local-token",
+            endpointSecrets: fixture.snapshot.endpointSecrets
+        )
+        let coordinator = GatewayServiceCoordinator()
+
+        let states = await withTaskGroup(of: GatewayServiceState.self) { group in
+            for _ in 0..<20 {
+                group.addTask { await coordinator.reconcile(snapshot: snapshot) }
+            }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+
+        XCTAssertEqual(states.count, 20)
+        XCTAssertTrue(states.allSatisfy { $0 == .running(port: port) })
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/models")!)
+        request.setValue("Bearer local-token", forHTTPHeaderField: "Authorization")
+        let (_, response) = try await URLSession.shared.data(for: request)
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        let stoppedState = await coordinator.reconcile(snapshot: nil)
+        XCTAssertEqual(stoppedState, .stopped)
     }
 
     func testClientDisconnectCancelsTheUpstreamRequest() async throws {

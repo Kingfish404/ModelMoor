@@ -48,7 +48,7 @@ final class AppModel: ObservableObject {
     private let codexBarUsageService: CodexBarUsageService
     private let diagnosticLog = DiagnosticLog()
     private var service: TunnelService?
-    private var gatewayService: GatewayService?
+    private var gatewayCoordinator: GatewayServiceCoordinator?
     private var cliProxyService: CLIProxyService?
     private var subscriptionLoginTask: Task<Void, Never>?
     private var cliProxyRestartTask: Task<Void, Never>?
@@ -1180,9 +1180,11 @@ final class AppModel: ObservableObject {
         cliProxyRestartTask = nil
         cliProxyStabilityTask?.cancel()
         cliProxyStabilityTask = nil
-        await gatewayService?.stop()
-        gatewayService = nil
-        gatewayState = .stopped
+        if let gatewayCoordinator {
+            gatewayState = await gatewayCoordinator.reconcile(snapshot: nil)
+        } else {
+            gatewayState = .stopped
+        }
         await cliProxyService?.stop()
         cliProxyService = nil
         cliProxyState = .stopped
@@ -1215,9 +1217,11 @@ final class AppModel: ObservableObject {
         cliProxyRestartTask = nil
         cliProxyStabilityTask?.cancel()
         cliProxyStabilityTask = nil
-        await gatewayService?.stop()
-        gatewayService = nil
-        gatewayState = .stopped
+        if let gatewayCoordinator {
+            gatewayState = await gatewayCoordinator.reconcile(snapshot: nil)
+        } else {
+            gatewayState = .stopped
+        }
         await cliProxyService?.stop()
         cliProxyState = .stopped
         await service?.setRuntimeAvailable(false, reason: "Waiting for Mac to wake")
@@ -1465,50 +1469,46 @@ final class AppModel: ObservableObject {
     }
 
     private func reconcileGateway() async {
-        await gatewayService?.stop()
-        gatewayService = nil
-        gatewayState = .stopped
-        guard configuration.gateway.enabled else { return }
+        guard configuration.gateway.enabled, !sleeping else {
+            if let gatewayCoordinator {
+                gatewayState = await gatewayCoordinator.reconcile(snapshot: nil)
+            } else {
+                gatewayState = .stopped
+            }
+            return
+        }
         do {
             let gatewayAPIKeys = try backgroundTokenStore.enabledGatewayAPIKeys(for: configuration.gateway)
             let secrets = backgroundTokenStore.endpointSecrets(for: configuration)
             let connectedMappings = Set(configuration.tunnels.compactMap { tunnel -> [UUID]? in
                 statuses[tunnel.id]?.phase == .connected ? tunnel.enabledMappings.map(\.id) : nil
             }.flatMap { $0 })
-            let tokenUsageStore = self.tokenUsageStore
-            let diagnosticLog = self.diagnosticLog
-            let gateway = GatewayService { usage in
-                Task {
-                    do {
-                        try await tokenUsageStore.appendUsage(
-                            tokens: usage.tokens,
-                            routeID: usage.routeID,
-                            endpointID: usage.endpointID
-                        )
-                    } catch {
-                        await diagnosticLog.append(
-                            subject: .gateway,
-                            severity: .warning,
-                            category: "usage.write",
-                            summary: error.localizedDescription
-                        )
-                    }
-                }
-            }
-            try await gateway.start(snapshot: GatewaySnapshot(
+            let snapshot = GatewaySnapshot(
                 configuration: configuration,
                 gatewayAPIKeys: gatewayAPIKeys,
                 endpointSecrets: secrets,
                 availableMappingIDs: connectedMappings
-            ))
-            gatewayService = gateway
-            gatewayState = gateway.state
-            await diagnosticLog.append(
-                subject: .gateway,
-                severity: .info,
-                category: "ready",
-                summary: "Gateway listening on loopback port \(configuration.gateway.listenPort)"
             )
+            gatewayState = await gatewayRuntime().reconcile(snapshot: snapshot)
+            switch gatewayState {
+            case .running:
+                await diagnosticLog.append(
+                    subject: .gateway,
+                    severity: .info,
+                    category: "ready",
+                    summary: "Gateway listening on loopback port \(configuration.gateway.listenPort)"
+                )
+            case let .failed(message):
+                errorMessage = message
+                await diagnosticLog.append(
+                    subject: .gateway,
+                    severity: .error,
+                    category: "failed",
+                    summary: message
+                )
+            case .stopped:
+                break
+            }
         } catch {
             gatewayState = .failed(error.localizedDescription)
             errorMessage = error.localizedDescription
@@ -1519,6 +1519,32 @@ final class AppModel: ObservableObject {
                 summary: error.localizedDescription
             )
         }
+    }
+
+    private func gatewayRuntime() -> GatewayServiceCoordinator {
+        if let gatewayCoordinator { return gatewayCoordinator }
+        let tokenUsageStore = self.tokenUsageStore
+        let diagnosticLog = self.diagnosticLog
+        let coordinator = GatewayServiceCoordinator { usage in
+            Task {
+                do {
+                    try await tokenUsageStore.appendUsage(
+                        tokens: usage.tokens,
+                        routeID: usage.routeID,
+                        endpointID: usage.endpointID
+                    )
+                } catch {
+                    await diagnosticLog.append(
+                        subject: .gateway,
+                        severity: .warning,
+                        category: "usage.write",
+                        summary: error.localizedDescription
+                    )
+                }
+            }
+        }
+        gatewayCoordinator = coordinator
+        return coordinator
     }
 
     func refreshTokenUsage() async {

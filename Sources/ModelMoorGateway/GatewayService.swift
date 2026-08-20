@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import ModelMoorCore
 import NIOCore
@@ -99,8 +100,12 @@ public final class GatewayService: @unchecked Sendable {
                 currentState = .running(port: snapshot.configuration.gateway.listenPort)
             }
         } catch {
-            lock.withLock { currentState = .failed(error.localizedDescription) }
-            throw error
+            let failure = GatewayServiceError.listenerFailure(
+                error,
+                port: snapshot.configuration.gateway.listenPort
+            )
+            lock.withLock { currentState = .failed(failure.localizedDescription) }
+            throw failure
         }
     }
 
@@ -140,14 +145,127 @@ private final class GatewayConnectionRegistry: @unchecked Sendable {
     }
 }
 
+/// Serializes and coalesces Gateway replacements. Callers may request another
+/// snapshot while a listener is stopping or binding, but only this coordinator
+/// is allowed to perform those lifecycle operations.
+public actor GatewayServiceCoordinator {
+    private enum Target: Equatable, Sendable {
+        case stopped
+        case running(GatewaySnapshot)
+    }
+
+    private let serviceFactory: @Sendable () -> GatewayService
+    private var service: GatewayService?
+    private var pendingTarget: Target?
+    private var isReconciling = false
+    private var appliedTarget: Target = .stopped
+    private var appliedState: GatewayServiceState = .stopped
+    private var waiters: [CheckedContinuation<GatewayServiceState, Never>] = []
+
+    public init(
+        maximumActiveRequests: Int = 64,
+        usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil
+    ) {
+        serviceFactory = {
+            GatewayService(
+                maximumActiveRequests: maximumActiveRequests,
+                usageHandler: usageHandler
+            )
+        }
+    }
+
+    public func reconcile(snapshot: GatewaySnapshot?) async -> GatewayServiceState {
+        pendingTarget = snapshot.map(Target.running) ?? .stopped
+        guard !isReconciling else {
+            return await withCheckedContinuation { continuation in
+                waiters.append(continuation)
+            }
+        }
+
+        isReconciling = true
+        var result = appliedState
+        var lastProcessedTarget: Target?
+        while let target = pendingTarget {
+            pendingTarget = nil
+            // Multiple status callbacks commonly request the same snapshot
+            // during one async bind. They should share that bind, not restart it.
+            guard target != lastProcessedTarget else { continue }
+            // Status callbacks also arrive sequentially. Keep an already healthy
+            // listener when its effective routing snapshot has not changed.
+            if target == appliedTarget, appliedState.isStable {
+                result = appliedState
+                lastProcessedTarget = target
+                continue
+            }
+            result = await apply(target)
+            lastProcessedTarget = target
+        }
+        isReconciling = false
+
+        let completedWaiters = waiters
+        waiters.removeAll(keepingCapacity: true)
+        for waiter in completedWaiters { waiter.resume(returning: result) }
+        return result
+    }
+
+    private func apply(_ target: Target) async -> GatewayServiceState {
+        await service?.stop()
+        service = nil
+        appliedTarget = target
+        guard case let .running(snapshot) = target else {
+            appliedState = .stopped
+            return appliedState
+        }
+
+        let replacement = serviceFactory()
+        do {
+            try await replacement.start(snapshot: snapshot)
+            service = replacement
+        } catch {
+            // GatewayService records the actionable failure in its state.
+        }
+        appliedState = replacement.state
+        return appliedState
+    }
+}
+
+private extension GatewayServiceState {
+    var isStable: Bool {
+        switch self {
+        case .stopped, .running: true
+        case .failed: false
+        }
+    }
+}
+
 public enum GatewayServiceError: LocalizedError, Equatable {
     case disabled
     case missingGatewayAPIKey
+    case listenerAddressInUse(port: Int)
+    case listenerPermissionDenied(port: Int)
+    case listenerFailed(port: Int, detail: String)
 
     public var errorDescription: String? {
         switch self {
         case .disabled: "Gateway is disabled in the current configuration."
         case .missingGatewayAPIKey: "Unified API requires an enabled API key."
+        case let .listenerAddressInUse(port):
+            "Unified API couldn't start because local port \(port) is already in use."
+        case let .listenerPermissionDenied(port):
+            "Unified API doesn't have permission to listen on local port \(port)."
+        case let .listenerFailed(port, detail):
+            "Unified API couldn't listen on 127.0.0.1:\(port): \(detail)"
+        }
+    }
+
+    fileprivate static func listenerFailure(_ error: Error, port: Int) -> Self {
+        guard let ioError = error as? IOError else {
+            return .listenerFailed(port: port, detail: error.localizedDescription)
+        }
+        switch ioError.errnoCode {
+        case EADDRINUSE: return .listenerAddressInUse(port: port)
+        case EACCES, EPERM: return .listenerPermissionDenied(port: port)
+        default: return .listenerFailed(port: port, detail: ioError.localizedDescription)
         }
     }
 }
