@@ -1,5 +1,7 @@
-import Darwin
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ModelMoorCore
 import NIOCore
 import NIOHTTP1
@@ -16,6 +18,7 @@ public final class GatewayService: @unchecked Sendable {
     private let limiter: GatewayRequestLimiter
     private let usageHandler: (@Sendable (GatewayTokenUsage) -> Void)?
     private let upstreamCancellationObserver: (@Sendable () -> Void)?
+    private let bindingPortOverride: Int?
     private let connections = GatewayConnectionRegistry()
     private let lock = NSLock()
     private var serverChannel: Channel?
@@ -28,19 +31,22 @@ public final class GatewayService: @unchecked Sendable {
         self.init(
             maximumActiveRequests: maximumActiveRequests,
             usageHandler: usageHandler,
-            upstreamCancellationObserver: nil
+            upstreamCancellationObserver: nil,
+            bindingPortOverride: nil
         )
     }
 
     init(
         maximumActiveRequests: Int = 64,
         usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil,
-        upstreamCancellationObserver: (@Sendable () -> Void)?
+        upstreamCancellationObserver: (@Sendable () -> Void)?,
+        bindingPortOverride: Int? = nil
     ) {
         group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         limiter = GatewayRequestLimiter(limit: maximumActiveRequests)
         self.usageHandler = usageHandler
         self.upstreamCancellationObserver = upstreamCancellationObserver
+        self.bindingPortOverride = bindingPortOverride
     }
 
     deinit {
@@ -68,6 +74,7 @@ public final class GatewayService: @unchecked Sendable {
         let connections = self.connections
         let usageHandler = self.usageHandler
         let upstreamCancellationObserver = self.upstreamCancellationObserver
+        let requestedPort = bindingPortOverride ?? snapshot.configuration.gateway.listenPort
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(.backlog, value: 128)
             .serverChannelOption(.socketOption(.so_reuseaddr), value: 1)
@@ -86,23 +93,28 @@ public final class GatewayService: @unchecked Sendable {
                     ))
                 }
             }
-            .childChannelOption(.socketOption(.tcp_nodelay), value: 1)
+            // TCP_NODELAY is an IPPROTO_TCP option. Setting it through
+            // `.socketOption(.tcp_nodelay)` would issue SOL_SOCKET/TCP_NODELAY,
+            // which Linux rejects with ENOPROTOOPT, killing every accepted
+            // child channel (Darwin silently tolerates it).
+            .childChannelOption(.tcpOption(.tcp_nodelay), value: 1)
             .childChannelOption(.socketOption(.so_reuseaddr), value: 1)
             .childChannelOption(ChannelOptions.allowRemoteHalfClosure, value: true)
 
         do {
             let channel = try await bootstrap.bind(
                 host: "127.0.0.1",
-                port: snapshot.configuration.gateway.listenPort
+                port: requestedPort
             ).get()
+            let boundPort = channel.localAddress?.port ?? requestedPort
             lock.withLock {
                 serverChannel = channel
-                currentState = .running(port: snapshot.configuration.gateway.listenPort)
+                currentState = .running(port: boundPort)
             }
         } catch {
             let failure = GatewayServiceError.listenerFailure(
                 error,
-                port: snapshot.configuration.gateway.listenPort
+                port: requestedPort
             )
             lock.withLock { currentState = .failed(failure.localizedDescription) }
             throw failure
@@ -172,6 +184,10 @@ public actor GatewayServiceCoordinator {
                 usageHandler: usageHandler
             )
         }
+    }
+
+    init(serviceFactory: @escaping @Sendable () -> GatewayService) {
+        self.serviceFactory = serviceFactory
     }
 
     public func reconcile(snapshot: GatewaySnapshot?) async -> GatewayServiceState {
@@ -263,8 +279,10 @@ public enum GatewayServiceError: LocalizedError, Equatable {
             return .listenerFailed(port: port, detail: error.localizedDescription)
         }
         switch ioError.errnoCode {
-        case EADDRINUSE: return .listenerAddressInUse(port: port)
-        case EACCES, EPERM: return .listenerPermissionDenied(port: port)
+        case POSIXErrorCode.EADDRINUSE.rawValue:
+            return .listenerAddressInUse(port: port)
+        case POSIXErrorCode.EACCES.rawValue, POSIXErrorCode.EPERM.rawValue:
+            return .listenerPermissionDenied(port: port)
         default: return .listenerFailed(port: port, detail: ioError.localizedDescription)
         }
     }
@@ -407,13 +425,24 @@ private final class GatewayHTTPHandler: ChannelInboundHandler, @unchecked Sendab
 }
 
 private final class GatewayResponseWriter: @unchecked Sendable {
-    private static let sharedUpstreamSession: URLSession = {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 300
-        configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        return URLSession(configuration: configuration)
-    }()
+    /// Shared upstream session with a router delegate: per-request streaming
+    /// bridges register with the router so all proxied requests keep sharing
+    /// one HTTPS connection pool. URLSession is not Sendable on every
+    /// platform's FoundationNetworking, hence the explicitly unchecked box.
+    private final class UpstreamSessionBox: @unchecked Sendable {
+        let router = UpstreamSessionRouter()
+        let session: URLSession
+
+        init() {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.timeoutIntervalForRequest = 300
+            configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
+            configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            session = URLSession(configuration: configuration, delegate: router, delegateQueue: nil)
+        }
+    }
+
+    private static let sharedUpstreamSession = UpstreamSessionBox()
 
     private let context: ChannelHandlerContext
     private let usageHandler: (@Sendable (GatewayTokenUsage) -> Void)?
@@ -439,31 +468,37 @@ private final class GatewayResponseWriter: @unchecked Sendable {
     }
 
     func proxy(_ request: GatewayPreparedRequest) async {
-        let cancellation = UpstreamTaskCancellation()
+        let bridge = UpstreamSessionBridge()
+        let upstream = Self.sharedUpstreamSession
         await withTaskCancellationHandler {
             await proxy(
                 request,
-                session: Self.sharedUpstreamSession,
-                cancellation: cancellation
+                upstream: upstream,
+                bridge: bridge
             )
         } onCancel: {
             // Cancel only this URLSessionTask; other clients keep their in-flight
             // requests and can continue reusing the shared HTTPS connection pool.
-            cancellation.cancel()
+            bridge.cancel()
             self.upstreamCancellationObserver?()
         }
     }
 
     private func proxy(
         _ request: GatewayPreparedRequest,
-        session: URLSession,
-        cancellation: UpstreamTaskCancellation
+        upstream: UpstreamSessionBox,
+        bridge: UpstreamSessionBridge
     ) async {
         var responseStarted = false
         var responseIsEventStream = false
+        var usageTokens: Int64?
         do {
-            let (bytes, response) = try await session.bytes(for: request.urlRequest, delegate: cancellation)
-            guard let response = response as? HTTPURLResponse else {
+            let (chunks, rawResponse) = try await bridge.start(
+                session: upstream.session,
+                router: upstream.router,
+                request: request.urlRequest
+            )
+            guard let response = rawResponse as? HTTPURLResponse else {
                 await writeLocal(GatewayLocalResponse(
                     status: 502,
                     body: GatewayHTTPHandler.errorBody(code: "invalid_upstream", message: "Upstream returned an invalid response.")
@@ -485,38 +520,30 @@ private final class GatewayResponseWriter: @unchecked Sendable {
                 .lowercased()
                 .hasPrefix("text/event-stream") == true
             responseIsEventStream = isEventStream
-            var usageTokens: Int64?
             var usageBody = Data()
             var usageBodyOverflowed = false
             usageBody.reserveCapacity(32 * 1_024)
-            defer {
-                if let usageTokens {
-                    usageHandler?(GatewayTokenUsage(
-                        routeID: request.routeID,
-                        endpointID: request.endpointID,
-                        tokens: usageTokens
-                    ))
-                }
-            }
             var chunk = Data()
             chunk.reserveCapacity(16 * 1_024)
-            for try await byte in bytes {
+            for try await data in chunks {
                 try Task.checkCancellation()
-                chunk.append(byte)
-                if !isEventStream {
-                    if usageBody.count < GatewayTokenUsageParser.maximumBufferedJSONBytes {
-                        usageBody.append(byte)
-                    } else {
-                        usageBodyOverflowed = true
+                for byte in data {
+                    chunk.append(byte)
+                    if !isEventStream {
+                        if usageBody.count < GatewayTokenUsageParser.maximumBufferedJSONBytes {
+                            usageBody.append(byte)
+                        } else {
+                            usageBodyOverflowed = true
+                        }
                     }
-                }
-                if chunk.count >= 16 * 1_024 || (isEventStream && Self.endsSSEEvent(chunk)) {
-                    if isEventStream, let parsed = GatewayTokenUsageParser.tokens(inSSEEvent: chunk) {
-                        usageTokens = max(usageTokens ?? 0, parsed)
+                    if chunk.count >= 16 * 1_024 || (isEventStream && Self.endsSSEEvent(chunk)) {
+                        if isEventStream, let parsed = GatewayTokenUsageParser.tokens(inSSEEvent: chunk) {
+                            usageTokens = max(usageTokens ?? 0, parsed)
+                        }
+                        await waitUntilWritable()
+                        await writeBody(chunk)
+                        chunk.removeAll(keepingCapacity: true)
                     }
-                    await waitUntilWritable()
-                    await writeBody(chunk)
-                    chunk.removeAll(keepingCapacity: true)
                 }
             }
             if !isEventStream, !usageBodyOverflowed {
@@ -525,12 +552,17 @@ private final class GatewayResponseWriter: @unchecked Sendable {
                       let parsed = GatewayTokenUsageParser.tokens(inSSEEvent: chunk) {
                 usageTokens = max(usageTokens ?? 0, parsed)
             }
+            // Report usage BEFORE the final flush so recording is ordered ahead
+            // of the client observing connection close on every platform.
+            reportUsage(usageTokens, for: request)
             if !chunk.isEmpty { await writeBody(chunk) }
             await finish()
         } catch is CancellationError {
             // The local channel is already closing. Avoid scheduling another write
             // against its event loop while Gateway shutdown is in progress.
+            reportUsage(usageTokens, for: request)
         } catch {
+            reportUsage(usageTokens, for: request)
             if Task.isCancelled { return }
             if responseStarted {
                 if responseIsEventStream {
@@ -556,6 +588,15 @@ private final class GatewayResponseWriter: @unchecked Sendable {
     private static func endsSSEEvent(_ data: Data) -> Bool {
         data.suffix(2).elementsEqual([0x0A, 0x0A])
             || data.suffix(4).elementsEqual([0x0D, 0x0A, 0x0D, 0x0A])
+    }
+
+    private func reportUsage(_ tokens: Int64?, for request: GatewayPreparedRequest) {
+        guard let tokens else { return }
+        usageHandler?(GatewayTokenUsage(
+            routeID: request.routeID,
+            endpointID: request.endpointID,
+            tokens: tokens
+        ))
     }
 
     private func writeHead(status: Int, headers: HTTPHeaders) async {
@@ -619,25 +660,131 @@ private final class GatewayResponseWriter: @unchecked Sendable {
     }
 }
 
-private final class UpstreamTaskCancellation: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+/// Delegate-driven streaming bridge over URLSession that works identically on
+/// Darwin Foundation and swift-corelibs-foundation (which lacks the async
+/// `bytes(for:)` API). Registers with the shared session's router so all
+/// proxied requests share one connection pool, and owns per-task cancellation.
+private final class UpstreamSessionBridge: @unchecked Sendable {
     private let lock = NSLock()
-    private var task: URLSessionTask?
+    private var task: URLSessionDataTask?
+    private var router: UpstreamSessionRouter?
     private var isCancelled = false
+    private var responseContinuation: CheckedContinuation<URLResponse, Error>?
+    private var chunkContinuation: AsyncThrowingStream<Data, Error>.Continuation?
 
-    func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
-        let cancelImmediately = lock.withLock { () -> Bool in
-            self.task = task
-            return isCancelled
+    /// Starts the upstream request and returns the response chunk stream plus
+    /// the received HTTP response head.
+    func start(
+        session: URLSession,
+        router: UpstreamSessionRouter,
+        request: URLRequest
+    ) async throws -> (AsyncThrowingStream<Data, Error>, URLResponse) {
+        // Create the task outside the stream's @Sendable build closure:
+        // URLSession is not Sendable in swift-corelibs-foundation.
+        let dataTask = session.dataTask(with: request)
+        lock.withLock {
+            self.task = dataTask
+            self.router = router
         }
-        if cancelImmediately { task.cancel() }
+        router.register(self, for: dataTask)
+        let stream = AsyncThrowingStream<Data, Error> {
+            (continuation: AsyncThrowingStream<Data, Error>.Continuation) in
+            self.lock.withLock { self.chunkContinuation = continuation }
+            continuation.onTermination = { [weak self] _ in self?.cancel() }
+        }
+        if lock.withLock({ self.isCancelled }) {
+            dataTask.cancel()
+        } else {
+            dataTask.resume()
+        }
+        let response: URLResponse = try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<URLResponse, Error>) in
+            let duplicate: CheckedContinuation<URLResponse, Error>? = lock.withLock {
+                if self.responseContinuation != nil { return continuation }
+                self.responseContinuation = continuation
+                return nil
+            }
+            duplicate?.resume(throwing: URLError(.cannotDecodeRawData))
+        }
+        return (stream, response)
     }
 
     func cancel() {
-        let task = lock.withLock { () -> URLSessionTask? in
+        let task = lock.withLock { () -> URLSessionDataTask? in
             isCancelled = true
             return self.task
         }
         task?.cancel()
+    }
+
+    fileprivate func didReceiveResponse(_ response: URLResponse) {
+        let continuation = lock.withLock { () -> CheckedContinuation<URLResponse, Error>? in
+            let current = responseContinuation
+            responseContinuation = nil
+            return current
+        }
+        continuation?.resume(returning: response)
+    }
+
+    fileprivate func didReceiveData(_ data: Data) {
+        guard !data.isEmpty else { return }
+        lock.withLock { _ = chunkContinuation?.yield(data) }
+    }
+
+    fileprivate func didComplete(error: (any Error)?) {
+        let (continuation, router, task) = lock.withLock { () -> (AsyncThrowingStream<Data, Error>.Continuation?, UpstreamSessionRouter?, URLSessionDataTask?) in
+            let current = chunkContinuation
+            chunkContinuation = nil
+            let currentRouter = self.router
+            self.router = nil
+            return (current, currentRouter, self.task)
+        }
+        if let router, let task { router.remove(self, for: task) }
+        if let error {
+            continuation?.finish(throwing: error)
+        } else {
+            continuation?.finish()
+        }
+    }
+}
+
+/// Single URLSession delegate for the shared upstream session; routes every
+/// callback to the per-request bridge registered for the task identifier.
+private final class UpstreamSessionRouter: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var bridges: [Int: UpstreamSessionBridge] = [:]
+
+    func register(_ bridge: UpstreamSessionBridge, for task: URLSessionTask) {
+        lock.withLock { bridges[task.taskIdentifier] = bridge }
+    }
+
+    func remove(_ bridge: UpstreamSessionBridge, for task: URLSessionTask) {
+        lock.withLock { _ = bridges.removeValue(forKey: task.taskIdentifier) }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+    ) {
+        let bridge = lock.withLock { bridges[dataTask.taskIdentifier] }
+        if let bridge {
+            bridge.didReceiveResponse(response)
+            completionHandler(.allow)
+        } else {
+            completionHandler(.cancel)
+        }
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        let bridge = lock.withLock { bridges[dataTask.taskIdentifier] }
+        bridge?.didReceiveData(data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        let bridge = lock.withLock { bridges[task.taskIdentifier] }
+        bridge?.didComplete(error: error)
     }
 }
 

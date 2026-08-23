@@ -1,6 +1,7 @@
 import Foundation
 
 public enum DiagnosticSubjectKind: String, Codable, CaseIterable, Sendable {
+    case system
     case mooring
     case endpoint
     case gateway
@@ -18,6 +19,7 @@ public struct DiagnosticSubject: Hashable, Codable, Sendable {
     public static func mooring(_ id: UUID) -> Self { Self(kind: .mooring, identifier: id.uuidString) }
     public static func endpoint(_ id: UUID) -> Self { Self(kind: .endpoint, identifier: id.uuidString) }
     public static let gateway = Self(kind: .gateway, identifier: "local-gateway")
+    public static let system = Self(kind: .system, identifier: "local-system")
 }
 
 public enum DiagnosticSeverity: String, Codable, Sendable {

@@ -32,10 +32,13 @@ BUILD_OPTIONS=(--disable-sandbox --cache-path "$PROJECT_DIR/.build/cache")
 cd "$PROJECT_DIR"
 "$PROJECT_DIR/Scripts/generate-icons.sh"
 CLIPROXY_BINARY="$("$PROJECT_DIR/Scripts/fetch-cliproxyapi.sh")"
-swift build $BUILD_OPTIONS -c release
-BIN_DIR="$(swift build $BUILD_OPTIONS -c release --show-bin-path)"
-APP_BINARY="$BIN_DIR/ModelMoorApp"
-CLI_BINARY="$BIN_DIR/modelmoor"
+# CLI ships from the root package; the macOS app lives in Apps/macOS so the
+# root package stays buildable on Linux (docs/PLAN.md milestone B).
+swift build $BUILD_OPTIONS -c release --product modelmoor
+swift build $BUILD_OPTIONS -c release --package-path Apps/macOS
+CLI_BINARY="$(swift build $BUILD_OPTIONS -c release --show-bin-path)/modelmoor"
+APP_BINARY="$(swift build $BUILD_OPTIONS -c release --package-path Apps/macOS --show-bin-path)/ModelMoorApp"
+APP_RESOURCE_BUNDLE="${APP_BINARY:h}/ModelMoorApp_ModelMoor.bundle"
 
 if [[ "$APP_BINARY" -ef "$CLI_BINARY" ]]; then
   print -u2 "error: app and CLI products resolve to the same file"
@@ -48,17 +51,28 @@ mkdir -p "$APP_DIR/Contents/Resources/Licenses"
 cp "$APP_BINARY" "$APP_DIR/Contents/MacOS/ModelMoor"
 cp "$CLIPROXY_BINARY" "$APP_DIR/Contents/MacOS/CLIProxyAPI"
 cp "$PROJECT_DIR/Support/Info.plist" "$APP_DIR/Contents/Info.plist"
+EN_LPROJ="$APP_RESOURCE_BUNDLE/en.lproj"
+ZH_HANS_LPROJ="$APP_RESOURCE_BUNDLE/zh-hans.lproj"
+for SOURCE_LPROJ in "$EN_LPROJ" "$ZH_HANS_LPROJ"; do
+  if [[ ! -d "$SOURCE_LPROJ" ]]; then
+    print -u2 "error: missing app localization resources: $SOURCE_LPROJ"
+    exit 1
+  fi
+done
+/usr/bin/ditto "$EN_LPROJ" "$APP_DIR/Contents/Resources/en.lproj"
+/usr/bin/ditto "$ZH_HANS_LPROJ" "$APP_DIR/Contents/Resources/zh-Hans.lproj"
 if [[ "$BUILD_PROFILE" == "development" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ModelMoor Dev" "$APP_DIR/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleName ModelMoor Dev" "$APP_DIR/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.modelmoor.app.dev" "$APP_DIR/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Set :ModelMoorBuildProfile development" "$APP_DIR/Contents/Info.plist"
 fi
-cp "$PROJECT_DIR/.build/checkouts/swift-nio/Sources/NIOPosix/PrivacyInfo.xcprivacy" \
+APP_PACKAGE_CHECKOUTS="$PROJECT_DIR/Apps/macOS/.build/checkouts"
+cp "$APP_PACKAGE_CHECKOUTS/swift-nio/Sources/NIOPosix/PrivacyInfo.xcprivacy" \
   "$APP_DIR/Contents/Resources/PrivacyInfo.xcprivacy"
-cp "$PROJECT_DIR/.build/checkouts/swift-nio/LICENSE.txt" \
+cp "$APP_PACKAGE_CHECKOUTS/swift-nio/LICENSE.txt" \
   "$APP_DIR/Contents/Resources/Licenses/SwiftNIO-LICENSE.txt"
-cp "$PROJECT_DIR/.build/checkouts/swift-nio/Sources/CNIOLLHTTP/LICENSE" \
+cp "$APP_PACKAGE_CHECKOUTS/swift-nio/Sources/CNIOLLHTTP/LICENSE" \
   "$APP_DIR/Contents/Resources/Licenses/CNIOLLHTTP-LICENSE.txt"
 cp "${CLIPROXY_BINARY:h}/LICENSE" \
   "$APP_DIR/Contents/Resources/Licenses/CLIProxyAPI-LICENSE.txt"

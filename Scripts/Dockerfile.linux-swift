@@ -1,0 +1,7 @@
+FROM ubuntu:24.04
+# Runtime/build dependencies for the Swift 6.1.2 OSS toolchain on Ubuntu 24.04.
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+    binutils git libc6-dev libcurl4-openssl-dev libedit2 libgcc-13-dev \
+    libpython3-dev libsqlite3-0 libstdc++-13-dev libxml2-dev libz3-dev \
+    pkg-config python3 tzdata unzip zlib1g-dev libncurses-dev \
+    && rm -rf /var/lib/apt/lists/*

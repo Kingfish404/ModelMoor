@@ -1,0 +1,796 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>%@  ·  %@ tokens</key>
+	<string>%1$@  ·  %2$@ tokens</string>
+	<key>%@ has unapplied changes. Apply them before leaving this view?</key>
+	<string>%@ has unapplied changes. Apply them before leaving this view?</string>
+	<key>%@ tokens in 24 hours</key>
+	<string>%@ tokens in 24 hours</string>
+	<key>%@, %@</key>
+	<string>%1$@, %2$@</string>
+	<key>%@, %@ tokens</key>
+	<string>%1$@, %2$@ tokens</string>
+	<key>%@. %@</key>
+	<string>%1$@. %2$@</string>
+	<key>%lld active of %lld</key>
+	<string>%1$lld active of %2$lld</string>
+	<key>%lld active of %lld accounts</key>
+	<string>%lld active of %lld accounts</string>
+	<key>%lld models discovered</key>
+	<string>%lld models discovered</string>
+	<key>1 active account</key>
+	<string>1 active account</string>
+	<key>1 disabled account</key>
+	<string>1 disabled account</string>
+	<key>1 model discovered</key>
+	<string>1 model discovered</string>
+	<key>A New Version Is Available</key>
+	<string>A New Version Is Available</string>
+	<key>API</key>
+	<string>API</string>
+	<key>API Endpoints</key>
+	<string>API Endpoints</string>
+	<key>API access</key>
+	<string>API access</string>
+	<key>API endpoint</key>
+	<string>API endpoint</string>
+	<key>API endpoints</key>
+	<string>API endpoints</string>
+	<key>API key</key>
+	<string>API key</string>
+	<key>API key not set</key>
+	<string>API key not set</string>
+	<key>API key, optional</key>
+	<string>API key, optional</string>
+	<key>API keys</key>
+	<string>API keys</string>
+	<key>API keys and management passwords are stored by macOS, not in a ModelMoor file.</key>
+	<string>API keys and management passwords are stored by macOS, not in a ModelMoor file.</string>
+	<key>API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.</key>
+	<string>API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.</string>
+	<key>API keys, public model names, and route configuration stay in Unified API.</key>
+	<string>API keys, public model names, and route configuration stay in Unified API.</string>
+	<key>Accept this key</key>
+	<string>Accept this key</string>
+	<key>Accepted by Unified API</key>
+	<string>Accepted by Unified API</string>
+	<key>Account pool</key>
+	<string>Account pool</string>
+	<key>Add</key>
+	<string>Add</string>
+	<key>Add API Endpoint</key>
+	<string>Add API Endpoint</string>
+	<key>Add API Endpoint…</key>
+	<string>Add API Endpoint…</string>
+	<key>Add API endpoint</key>
+	<string>Add API endpoint</string>
+	<key>Add API key</key>
+	<string>Add API key</string>
+	<key>Add Endpoint…</key>
+	<string>Add Endpoint…</string>
+	<key>Add Key…</key>
+	<string>Add Key…</string>
+	<key>Add Models…</key>
+	<string>Add Models…</string>
+	<key>Add Port Forward</key>
+	<string>Add Port Forward</string>
+	<key>Add Raw Port Forward…</key>
+	<string>Add Raw Port Forward…</string>
+	<key>Add SSH Connection</key>
+	<string>Add SSH Connection</string>
+	<key>Add and Copy</key>
+	<string>Add and Copy</string>
+	<key>Add models</key>
+	<string>Add models</string>
+	<key>Add models to Unified API</key>
+	<string>Add models to Unified API</string>
+	<key>Add port forward</key>
+	<string>Add port forward</string>
+	<key>Address</key>
+	<string>Address</string>
+	<key>Advanced</key>
+	<string>Advanced</string>
+	<key>Advanced SSH Settings</key>
+	<string>Advanced SSH Settings</string>
+	<key>All endpoints</key>
+	<string>All endpoints</string>
+	<key>All models</key>
+	<string>All models</string>
+	<key>App Preferences</key>
+	<string>App Preferences</string>
+	<key>Apply Changes</key>
+	<string>Apply Changes</string>
+	<key>Apply Changes Before Continuing?</key>
+	<string>Apply Changes Before Continuing?</string>
+	<key>Apply Port Change</key>
+	<string>Apply Port Change</string>
+	<key>At least one key must stay enabled while authentication is required.</key>
+	<string>At least one key must stay enabled while authentication is required.</string>
+	<key>Authentication</key>
+	<string>Authentication</string>
+	<key>Automatically check for updates</key>
+	<string>Automatically check for updates</string>
+	<key>Back</key>
+	<string>Back</string>
+	<key>Base URL</key>
+	<string>Base URL</string>
+	<key>Base path</key>
+	<string>Base path</string>
+	<key>Basics</key>
+	<string>Basics</string>
+	<key>Bearer API key, optional</key>
+	<string>Bearer API key, optional</string>
+	<key>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</key>
+	<string>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</string>
+	<key>Cancel</key>
+	<string>Cancel</string>
+	<key>Cancel Connection</key>
+	<string>Cancel Connection</string>
+	<key>Check Now</key>
+	<string>Check Now</string>
+	<key>Check Reachability</key>
+	<string>Check Reachability</string>
+	<key>Check for Updates…</key>
+	<string>Check for Updates…</string>
+	<key>Checking</key>
+	<string>Checking</string>
+	<key>Checking GitHub for updates…</key>
+	<string>Checking GitHub for updates…</string>
+	<key>Checking for Updates…</key>
+	<string>Checking for Updates…</string>
+	<key>Checking model list…</key>
+	<string>Checking model list…</string>
+	<key>Checking…</key>
+	<string>Checking…</string>
+	<key>Choose an SSH alias and define the first fixed or dynamic port forward.</key>
+	<string>Choose an SSH alias and define the first fixed or dynamic port forward.</string>
+	<key>Choose model IDs from an OpenAI-compatible endpoint.</key>
+	<string>Choose model IDs from an OpenAI-compatible endpoint.</string>
+	<key>Choose which discovered models the Unified API should expose to clients.</key>
+	<string>Choose which discovered models the Unified API should expose to clients.</string>
+	<key>Clear Search</key>
+	<string>Clear Search</string>
+	<key>Clients send an enabled key as an Authorization bearer token.</key>
+	<string>Clients send an enabled key as an Authorization bearer token.</string>
+	<key>Clients using %@ will immediately lose access.</key>
+	<string>Clients using %@ will immediately lose access.</string>
+	<key>Clients using %@ will need the replacement. The new key will be copied to the pasteboard.</key>
+	<string>Clients using %@ will need the replacement. The new key will be copied to the pasteboard.</string>
+	<key>Cloud API</key>
+	<string>Cloud API</string>
+	<key>Collapse Others</key>
+	<string>Collapse Others</string>
+	<key>Command preview</key>
+	<string>Command preview</string>
+	<key>Configuration</key>
+	<string>Configuration</string>
+	<key>Configure in Unified API…</key>
+	<string>Configure in Unified API…</string>
+	<key>Configure models</key>
+	<string>Configure models</string>
+	<key>Configured connections start in the menu bar without opening the main window.</key>
+	<string>Configured connections start in the menu bar without opening the main window.</string>
+	<key>Connect</key>
+	<string>Connect</string>
+	<key>Connect All</key>
+	<string>Connect All</string>
+	<key>Connect Selected</key>
+	<string>Connect Selected</string>
+	<key>Connect a supported provider below. You can add more than one account for each provider.</key>
+	<string>Connect a supported provider below. You can add more than one account for each provider.</string>
+	<key>Connect after creation and at login</key>
+	<string>Connect after creation and at login</string>
+	<key>Connect an account</key>
+	<string>Connect an account</string>
+	<key>Connect another account</key>
+	<string>Connect another account</string>
+	<key>Connect at login</key>
+	<string>Connect at login</string>
+	<key>Connect your first API</key>
+	<string>Connect your first API</string>
+	<key>Connection</key>
+	<string>Connection</string>
+	<key>Connection timeout</key>
+	<string>Connection timeout</string>
+	<key>Connect…</key>
+	<string>Connect…</string>
+	<key>Continue</key>
+	<string>Continue</string>
+	<key>Control command</key>
+	<string>Control command</string>
+	<key>Copy %@</key>
+	<string>Copy %@</string>
+	<key>Copy %@ API key</key>
+	<string>Copy %@ API key</string>
+	<key>Copy API key</key>
+	<string>Copy API key</string>
+	<key>Copy Code</key>
+	<string>Copy Code</string>
+	<key>Copy Diagnostic Summary</key>
+	<string>Copy Diagnostic Summary</string>
+	<key>Copy Local Address</key>
+	<string>Copy Local Address</string>
+	<key>Copy Model ID</key>
+	<string>Copy Model ID</string>
+	<key>Copy Model ID, %lld</key>
+	<string>Copy Model ID, %lld</string>
+	<key>Copy Remote Address</key>
+	<string>Copy Remote Address</string>
+	<key>Copy SSH Argument</key>
+	<string>Copy SSH Argument</string>
+	<key>Copy URL</key>
+	<string>Copy URL</string>
+	<key>Copy Unified API Key</key>
+	<string>Copy Unified API Key</string>
+	<key>Copy Unified URL</key>
+	<string>Copy Unified URL</string>
+	<key>Copy model ID</key>
+	<string>Copy model ID</string>
+	<key>Couldn’t Check for Updates</key>
+	<string>Couldn’t Check for Updates</string>
+	<key>Counts include requests whose upstream response contains usage data.</key>
+	<string>Counts include requests whose upstream response contains usage data.</string>
+	<key>Create Anyway</key>
+	<string>Create Anyway</string>
+	<key>Create Endpoint</key>
+	<string>Create Endpoint</string>
+	<key>Create SSH Connection</key>
+	<string>Create SSH Connection</string>
+	<key>Create an OpenSSH fixed or dynamic port forward.</key>
+	<string>Create an OpenSSH fixed or dynamic port forward.</string>
+	<key>Creating…</key>
+	<string>Creating…</string>
+	<key>Current API key</key>
+	<string>Current API key</string>
+	<key>Current Version</key>
+	<string>Current Version</string>
+	<key>Current selection is hidden by search</key>
+	<string>Current selection is hidden by search</string>
+	<key>DGX Spark API</key>
+	<string>DGX Spark API</string>
+	<key>DeepSeek API key</key>
+	<string>DeepSeek API key</string>
+	<key>Delete API Endpoint…</key>
+	<string>Delete API Endpoint…</string>
+	<key>Delete Connection</key>
+	<string>Delete Connection</string>
+	<key>Delete Endpoint</key>
+	<string>Delete Endpoint</string>
+	<key>Delete Key</key>
+	<string>Delete Key</string>
+	<key>Delete Key…</key>
+	<string>Delete Key…</string>
+	<key>Delete Other Service…</key>
+	<string>Delete Other Service…</string>
+	<key>Delete SSH Connection…</key>
+	<string>Delete SSH Connection…</string>
+	<key>Delete this API key?</key>
+	<string>Delete this API key?</string>
+	<key>Delete this SSH connection?</key>
+	<string>Delete this SSH connection?</string>
+	<key>Diagnostic URL</key>
+	<string>Diagnostic URL</string>
+	<key>Diagnostics and Privacy</key>
+	<string>Diagnostics and Privacy</string>
+	<key>Direct Connection</key>
+	<string>Direct Connection</string>
+	<key>Direct HTTPS API</key>
+	<string>Direct HTTPS API</string>
+	<key>Disable Unified API</key>
+	<string>Disable Unified API</string>
+	<key>Disabled</key>
+	<string>Disabled</string>
+	<key>Disabling the listener keeps your model list for the next time you enable it.</key>
+	<string>Disabling the listener keeps your model list for the next time you enable it.</string>
+	<key>Discard Changes</key>
+	<string>Discard Changes</string>
+	<key>Disconnect</key>
+	<string>Disconnect</string>
+	<key>Disconnect All</key>
+	<string>Disconnect All</string>
+	<key>Disconnect Selected</key>
+	<string>Disconnect Selected</string>
+	<key>Disconnecting…</key>
+	<string>Disconnecting…</string>
+	<key>Discovered models</key>
+	<string>Discovered models</string>
+	<key>Dismiss</key>
+	<string>Dismiss</string>
+	<key>Download Update</key>
+	<string>Download Update</string>
+	<key>Download Update…</key>
+	<string>Download Update…</string>
+	<key>Duplicate</key>
+	<string>Duplicate</string>
+	<key>Duplicate API Endpoint</key>
+	<string>Duplicate API Endpoint</string>
+	<key>Duplicate SSH Connection</key>
+	<string>Duplicate SSH Connection</string>
+	<key>Dynamic port forwarding (-D)</key>
+	<string>Dynamic port forwarding (-D)</string>
+	<key>Each successful sign-in adds a separate credential to the account pool.</key>
+	<string>Each successful sign-in adds a separate credential to the account pool.</string>
+	<key>Edit Port Forward…</key>
+	<string>Edit Port Forward…</string>
+	<key>Edit port forward</key>
+	<string>Edit port forward</string>
+	<key>Edit…</key>
+	<string>Edit…</string>
+	<key>Enable %@</key>
+	<string>Enable %@</string>
+	<key>Enable Unified API</key>
+	<string>Enable Unified API</string>
+	<key>Enabled</key>
+	<string>Enabled</string>
+	<key>Endpoint enabled</key>
+	<string>Endpoint enabled</string>
+	<key>Endpoint not found</key>
+	<string>Endpoint not found</string>
+	<key>Enter model ID manually</key>
+	<string>Enter model ID manually</string>
+	<key>Expand Others</key>
+	<string>Expand Others</string>
+	<key>Expose selected models through one authenticated local API.</key>
+	<string>Expose selected models through one authenticated local API.</string>
+	<key>Failure threshold</key>
+	<string>Failure threshold</string>
+	<key>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</key>
+	<string>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</string>
+	<key>Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.</key>
+	<string>Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.</string>
+	<key>HTTPS base URL</key>
+	<string>HTTPS base URL</string>
+	<key>HTTPS origin</key>
+	<string>HTTPS origin</string>
+	<key>Health path</key>
+	<string>Health path</string>
+	<key>Host</key>
+	<string>Host</string>
+	<key>Idle</key>
+	<string>Idle</string>
+	<key>In progress</key>
+	<string>In progress</string>
+	<key>In use, saved in Keychain</key>
+	<string>In use, saved in Keychain</string>
+	<key>Included models</key>
+	<string>Included models</string>
+	<key>Inspect the tokens reported by models served through the Unified API.</key>
+	<string>Inspect the tokens reported by models served through the Unified API.</string>
+	<key>Invalid endpoint URL</key>
+	<string>Invalid endpoint URL</string>
+	<key>Keepalive interval</key>
+	<string>Keepalive interval</string>
+	<key>Keychain Secrets</key>
+	<string>Keychain Secrets</string>
+	<key>Last checked</key>
+	<string>Last checked</string>
+	<key>Last checked %@</key>
+	<string>Last checked %@</string>
+	<key>Launch %@ at login</key>
+	<string>Launch %@ at login</string>
+	<key>Legacy Configuration</key>
+	<string>Legacy Configuration</string>
+	<key>Listen port</key>
+	<string>Listen port</string>
+	<key>Loading ModelMoor configuration</key>
+	<string>Loading ModelMoor configuration</string>
+	<key>Loading ModelMoor…</key>
+	<string>Loading ModelMoor…</string>
+	<key>Local endpoint</key>
+	<string>Local endpoint</string>
+	<key>Local port forwarding (-L)</key>
+	<string>Local port forwarding (-L)</string>
+	<key>Login launch is disabled for development builds.</key>
+	<string>Login launch is disabled for development builds.</string>
+	<key>Loopback origin</key>
+	<string>Loopback origin</string>
+	<key>Manage %@</key>
+	<string>Manage %@</string>
+	<key>Manage Models…</key>
+	<string>Manage Models…</string>
+	<key>Manage Subscription</key>
+	<string>Manage Subscription</string>
+	<key>Managed helper</key>
+	<string>Managed helper</string>
+	<key>Method</key>
+	<string>Method</string>
+	<key>Model</key>
+	<string>Model</string>
+	<key>Model list path</key>
+	<string>Model list path</string>
+	<key>Model usage</key>
+	<string>Model usage</string>
+	<key>ModelMoor %@ is available.</key>
+	<string>ModelMoor %@ is available.</string>
+	<key>ModelMoor %@ is available. You are currently using version %@.</key>
+	<string>ModelMoor %@ is available. You are currently using version %@.</string>
+	<key>ModelMoor Is Up to Date</key>
+	<string>ModelMoor Is Up to Date</string>
+	<key>ModelMoor creates a loopback port forward and keeps the SSH connection available in the background.</key>
+	<string>ModelMoor creates a loopback port forward and keeps the SSH connection available in the background.</string>
+	<key>ModelMoor is up to date.</key>
+	<string>ModelMoor is up to date.</string>
+	<key>ModelMoor records a bounded, redacted runtime history. API keys and inference content are never included.</key>
+	<string>ModelMoor records a bounded, redacted runtime history. API keys and inference content are never included.</string>
+	<key>ModelMoor will remove the local OAuth credential for %@.</key>
+	<string>ModelMoor will remove the local OAuth credential for %@.</string>
+	<key>Models</key>
+	<string>Models</string>
+	<key>Models from subscriptions</key>
+	<string>Models from subscriptions</string>
+	<key>Models, %lld</key>
+	<string>Models, %lld</string>
+	<key>Models, %lld discovered</key>
+	<string>Models, %lld discovered</string>
+	<key>Models, 1</key>
+	<string>Models, 1</string>
+	<key>Models, 1 discovered</key>
+	<string>Models, 1 discovered</string>
+	<key>More account actions</key>
+	<string>More account actions</string>
+	<key>More actions for %@</key>
+	<string>More actions for %@</string>
+	<key>More key actions</key>
+	<string>More key actions</string>
+	<key>Name</key>
+	<string>Name</string>
+	<key>Navigate</key>
+	<string>Navigate</string>
+	<key>Needs Attention</key>
+	<string>Needs Attention</string>
+	<key>Needs Attention, %lld</key>
+	<string>Needs Attention, %lld</string>
+	<key>Needs attention</key>
+	<string>Needs attention</string>
+	<key>Needs attention, %@</key>
+	<string>Needs attention, %@</string>
+	<key>New API Endpoint…</key>
+	<string>New API Endpoint…</string>
+	<key>New SSH Connection…</key>
+	<string>New SSH Connection…</string>
+	<key>New SSH connection</key>
+	<string>New SSH connection</string>
+	<key>No API Endpoints</key>
+	<string>No API Endpoints</string>
+	<key>No API endpoints use this connection.</key>
+	<string>No API endpoints use this connection.</string>
+	<key>No API keys configured</key>
+	<string>No API keys configured</string>
+	<key>No API keys saved. Add one to authenticate this endpoint.</key>
+	<string>No API keys saved. Add one to authenticate this endpoint.</string>
+	<key>No SSH Connections</key>
+	<string>No SSH Connections</string>
+	<key>No accounts connected</key>
+	<string>No accounts connected</string>
+	<key>No discovered models</key>
+	<string>No discovered models</string>
+	<key>No matching connections or endpoints</key>
+	<string>No matching connections or endpoints</string>
+	<key>No matching upstream response included token usage in this range.</key>
+	<string>No matching upstream response included token usage in this range.</string>
+	<key>No model IDs are available yet.</key>
+	<string>No model IDs are available yet.</string>
+	<key>No new update was found last time.</key>
+	<string>No new update was found last time.</string>
+	<key>No reported usage</key>
+	<string>No reported usage</string>
+	<key>No unified models</key>
+	<string>No unified models</string>
+	<key>Not Now</key>
+	<string>Not Now</string>
+	<key>Not accepted</key>
+	<string>Not accepted</string>
+	<key>Not checked</key>
+	<string>Not checked</string>
+	<key>OK</key>
+	<string>OK</string>
+	<key>Off</key>
+	<string>Off</string>
+	<key>On</key>
+	<string>On</string>
+	<key>One local URL for the models you choose.</key>
+	<string>One local URL for the models you choose.</string>
+	<key>Only direct HTTPS API endpoints can be duplicated.</key>
+	<string>Only direct HTTPS API endpoints can be duplicated.</string>
+	<key>Open %@</key>
+	<string>Open %@</string>
+	<key>Open Folder</key>
+	<string>Open Folder</string>
+	<key>Open Keychain Access</key>
+	<string>Open Keychain Access</string>
+	<key>Open sign-in page</key>
+	<string>Open sign-in page</string>
+	<key>Open the %@ folder in Finder</key>
+	<string>Open the %@ folder in Finder</string>
+	<key>Opens API endpoint details</key>
+	<string>Opens API endpoint details</string>
+	<key>Others</key>
+	<string>Others</string>
+	<key>Overview</key>
+	<string>Overview</string>
+	<key>Persistent Storage</key>
+	<string>Persistent Storage</string>
+	<key>Port</key>
+	<string>Port</string>
+	<key>Port Forwards</key>
+	<string>Port Forwards</string>
+	<key>Port forward type</key>
+	<string>Port forward type</string>
+	<key>Preset</key>
+	<string>Preset</string>
+	<key>Provider credentials are managed in Subscription.</key>
+	<string>Provider credentials are managed in Subscription.</string>
+	<key>Public model</key>
+	<string>Public model</string>
+	<key>Public model name “%@” is already in use.</key>
+	<string>Public model name “%@” is already in use.</string>
+	<key>Public name</key>
+	<string>Public name</string>
+	<key>Quit %@</key>
+	<string>Quit %@</string>
+	<key>Ready</key>
+	<string>Ready</string>
+	<key>Ready endpoints</key>
+	<string>Ready endpoints</string>
+	<key>Ready, %lld model</key>
+	<string>Ready, %lld model</string>
+	<key>Ready, %lld models</key>
+	<string>Ready, %lld models</string>
+	<key>Ready, 127.0.0.1:%lld, %lld models</key>
+	<string>Ready, 127.0.0.1:%lld, %lld models</string>
+	<key>Reconnect automatically</key>
+	<string>Reconnect automatically</string>
+	<key>Refresh</key>
+	<string>Refresh</string>
+	<key>Refresh Status</key>
+	<string>Refresh Status</string>
+	<key>Refresh all endpoint status</key>
+	<string>Refresh all endpoint status</string>
+	<key>Refresh the endpoint or enter an upstream model ID manually.</key>
+	<string>Refresh the endpoint or enter an upstream model ID manually.</string>
+	<key>Refresh the panel to try loading it again.</key>
+	<string>Refresh the panel to try loading it again.</string>
+	<key>Refreshing Status…</key>
+	<string>Refreshing Status…</string>
+	<key>Refreshing endpoint status</key>
+	<string>Refreshing endpoint status</string>
+	<key>Refreshing usage</key>
+	<string>Refreshing usage</string>
+	<key>Refreshing…</key>
+	<string>Refreshing…</string>
+	<key>Reload SSH configuration</key>
+	<string>Reload SSH configuration</string>
+	<key>Reload ~/.ssh/config</key>
+	<string>Reload ~/.ssh/config</string>
+	<key>Remote API</key>
+	<string>Remote API</string>
+	<key>Remote API port</key>
+	<string>Remote API port</string>
+	<key>Remote over SSH</key>
+	<string>Remote over SSH</string>
+	<key>Remote port forwarding (-R)</key>
+	<string>Remote port forwarding (-R)</string>
+	<key>Remove %@</key>
+	<string>Remove %@</string>
+	<key>Remove %@ from Unified API</key>
+	<string>Remove %@ from Unified API</string>
+	<key>Remove %@ port forward</key>
+	<string>Remove %@ port forward</string>
+	<key>Remove Account</key>
+	<string>Remove Account</string>
+	<key>Remove Account…</key>
+	<string>Remove Account…</string>
+	<key>Remove Key…</key>
+	<string>Remove Key…</string>
+	<key>Remove model from Unified API</key>
+	<string>Remove model from Unified API</string>
+	<key>Remove port forward</key>
+	<string>Remove port forward</string>
+	<key>Remove the API endpoint before removing its port forward</key>
+	<string>Remove the API endpoint before removing its port forward</string>
+	<key>Remove this API key?</key>
+	<string>Remove this API key?</string>
+	<key>Remove this subscription account?</key>
+	<string>Remove this subscription account?</string>
+	<key>Replace Key…</key>
+	<string>Replace Key…</string>
+	<key>Require API key</key>
+	<string>Require API key</string>
+	<key>Restore Defaults</key>
+	<string>Restore Defaults</string>
+	<key>Retained as an unchanged migration source for older ModelMoor versions.</key>
+	<string>Retained as an unchanged migration source for older ModelMoor versions.</string>
+	<key>Retry</key>
+	<string>Retry</string>
+	<key>Retry Test</key>
+	<string>Retry Test</string>
+	<key>Reverse dynamic port forwarding (-R)</key>
+	<string>Reverse dynamic port forwarding (-R)</string>
+	<key>Revert</key>
+	<string>Revert</string>
+	<key>Rotate Key</key>
+	<string>Rotate Key</string>
+	<key>Rotate Key…</key>
+	<string>Rotate Key…</string>
+	<key>Rotate this API key?</key>
+	<string>Rotate this API key?</string>
+	<key>Run Diagnostics</key>
+	<string>Run Diagnostics</string>
+	<key>Run a read-only model-list request before creating this endpoint.</key>
+	<string>Run a read-only model-list request before creating this endpoint.</string>
+	<key>Run diagnostics</key>
+	<string>Run diagnostics</string>
+	<key>SSH Connection</key>
+	<string>SSH Connection</string>
+	<key>SSH Connections</key>
+	<string>SSH Connections</string>
+	<key>SSH alias</key>
+	<string>SSH alias</string>
+	<key>SSH alias %@, %lld active forwards</key>
+	<string>SSH alias %1$@, %2$lld active forwards</string>
+	<key>SSH connection not found</key>
+	<string>SSH connection not found</string>
+	<key>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</key>
+	<string>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</string>
+	<key>Save Port Forward</key>
+	<string>Save Port Forward</string>
+	<key>Saved in Keychain</key>
+	<string>Saved in Keychain</string>
+	<key>Search Sidebar</key>
+	<string>Search Sidebar</string>
+	<key>Search connections and endpoints</key>
+	<string>Search connections and endpoints</string>
+	<key>Selected time</key>
+	<string>Selected time</string>
+	<key>Selected tokens</key>
+	<string>Selected tokens</string>
+	<key>Set Key…</key>
+	<string>Set Key…</string>
+	<key>Settings</key>
+	<string>Settings</string>
+	<key>Settings…</key>
+	<string>Settings…</string>
+	<key>Show SSH Connection</key>
+	<string>Show SSH Connection</string>
+	<key>Show Unified API</key>
+	<string>Show Unified API</string>
+	<key>Show in ModelMoor</key>
+	<string>Show in ModelMoor</string>
+	<key>Show or Hide Sidebar</key>
+	<string>Show or Hide Sidebar</string>
+	<key>Show or hide sidebar</key>
+	<string>Show or hide sidebar</string>
+	<key>Show or hide the sidebar</key>
+	<string>Show or hide the sidebar</string>
+	<key>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth refresh credentials are stored in ModelMoor's private application-data directory because the bundled helper requires file-backed credentials.</key>
+	<string>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth refresh credentials are stored in ModelMoor's private application-data directory because the bundled helper requires file-backed credentials.</string>
+	<key>Software Updates</key>
+	<string>Software Updates</string>
+	<key>Source</key>
+	<string>Source</string>
+	<key>Source endpoint</key>
+	<string>Source endpoint</string>
+	<key>Spark dashboard</key>
+	<string>Spark dashboard</string>
+	<key>Starting</key>
+	<string>Starting</string>
+	<key>Starting, %lld models</key>
+	<string>Starting, %lld models</string>
+	<key>Startup</key>
+	<string>Startup</string>
+	<key>Status</key>
+	<string>Status</string>
+	<key>Step %lld of 3</key>
+	<string>Step %lld of 3</string>
+	<key>Subscription</key>
+	<string>Subscription</string>
+	<key>Subscription Data</key>
+	<string>Subscription Data</string>
+	<key>Test Endpoint</key>
+	<string>Test Endpoint</string>
+	<key>Test URL</key>
+	<string>Test URL</string>
+	<key>Test and create</key>
+	<string>Test and create</string>
+	<key>The SSH port forward is missing</key>
+	<string>The SSH port forward is missing</string>
+	<key>The internal loopback key is generated from Keychain into the helper's private configuration.</key>
+	<string>The internal loopback key is generated from Keychain into the helper's private configuration.</string>
+	<key>The key is stored in Keychain and is never written to ModelMoor configuration.</key>
+	<string>The key is stored in Keychain and is never written to ModelMoor configuration.</string>
+	<key>The key is stored in Keychain and is never written to the ModelMoor configuration file.</key>
+	<string>The key is stored in Keychain and is never written to the ModelMoor configuration file.</string>
+	<key>The key named %@ will be removed from Keychain.</key>
+	<string>The key named %@ will be removed from Keychain.</string>
+	<key>The listener stays on loopback, so the forwarded port is not exposed to the LAN.</key>
+	<string>The listener stays on loopback, so the forwarded port is not exposed to the LAN.</string>
+	<key>The local port is allocated automatically and remains loopback-only.</key>
+	<string>The local port is allocated automatically and remains loopback-only.</string>
+	<key>The previous Gateway Token is the default Unified API key.</key>
+	<string>The previous Gateway Token is the default Unified API key.</string>
+	<key>This API endpoint</key>
+	<string>This API endpoint</string>
+	<key>This SSH connection</key>
+	<string>This SSH connection</string>
+	<key>This SSH connection has unapplied changes.</key>
+	<string>This SSH connection has unapplied changes.</string>
+	<key>This endpoint has unapplied changes.</key>
+	<string>This endpoint has unapplied changes.</string>
+	<key>This forward belongs to an API endpoint, so it must remain a local -L forward.</key>
+	<string>This forward belongs to an API endpoint, so it must remain a local -L forward.</string>
+	<key>Time</key>
+	<string>Time</string>
+	<key>Time range</key>
+	<string>Time range</string>
+	<key>Token counts and internal route identifiers; request and response content is not stored.</key>
+	<string>Token counts and internal route identifiers; request and response content is not stored.</string>
+	<key>Token trend</key>
+	<string>Token trend</string>
+	<key>Token usage over %@</key>
+	<string>Token usage over %@</string>
+	<key>Tokens</key>
+	<string>Tokens</string>
+	<key>Type</key>
+	<string>Type</string>
+	<key>Unified API</key>
+	<string>Unified API</string>
+	<key>Unified API gives local clients a stable OpenAI-compatible endpoint while ModelMoor routes each public model name to its source API.</key>
+	<string>Unified API gives local clients a stable OpenAI-compatible endpoint while ModelMoor routes each public model name to its source API.</string>
+	<key>Update checks are disabled for development builds.</key>
+	<string>Update checks are disabled for development builds.</string>
+	<key>Update to %@…</key>
+	<string>Update to %@…</string>
+	<key>Updates have not been checked yet.</key>
+	<string>Updates have not been checked yet.</string>
+	<key>Updating %@</key>
+	<string>Updating %@</string>
+	<key>Upstream model</key>
+	<string>Upstream model</string>
+	<key>Upstream-reported tokens</key>
+	<string>Upstream-reported tokens</string>
+	<key>Usage</key>
+	<string>Usage</string>
+	<key>Usage History</key>
+	<string>Usage History</string>
+	<key>Usage and Settings</key>
+	<string>Usage and Settings</string>
+	<key>Usage by model</key>
+	<string>Usage by model</string>
+	<key>Usage history stores timestamps, token totals, and internal route and endpoint identifiers. Prompts, responses, model names, headers, and API keys are not stored. Streaming requests appear only when the upstream sends usage data.</key>
+	<string>Usage history stores timestamps, token totals, and internal route and endpoint identifiers. Prompts, responses, model names, headers, and API keys are not stored. Streaming requests appear only when the upstream sends usage data.</string>
+	<key>Usage history unavailable</key>
+	<string>Usage history unavailable</string>
+	<key>Use %@</key>
+	<string>Use %@</string>
+	<key>Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.</key>
+	<string>Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.</string>
+	<key>Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.</key>
+	<string>Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.</string>
+	<key>Use for routing</key>
+	<string>Use for routing</string>
+	<key>Used By</key>
+	<string>Used By</string>
+	<key>Used by %@</key>
+	<string>Used by %@</string>
+	<key>Version %@ is the newest version available.</key>
+	<string>Version %@ is the newest version available.</string>
+	<key>Via</key>
+	<string>Via</string>
+	<key>View Release</key>
+	<string>View Release</string>
+	<key>View Release…</key>
+	<string>View Release…</string>
+	<key>Waiting for %@ sign-in</key>
+	<string>Waiting for %@ sign-in</string>
+	<key>Waiting for sign-in</key>
+	<string>Waiting for sign-in</string>
+	<key>Where is the API running?</key>
+	<string>Where is the API running?</string>
+	<key>Window and update preferences. Login launch is managed separately by macOS.</key>
+	<string>Window and update preferences. Login launch is managed separately by macOS.</string>
+	<key>Your local model endpoints</key>
+	<string>Your local model endpoints</string>
+</dict>
+</plist>

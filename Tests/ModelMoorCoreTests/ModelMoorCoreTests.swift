@@ -1,16 +1,55 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import XCTest
 @testable import ModelMoorCore
+@testable import ModelMoorSystem
 
 final class ModelMoorCoreTests: XCTestCase {
+    /// Isolated per-test secret store. Unit tests never depend on the user's
+    /// login Keychain, its ACL/UI state, or a desktop session.
+    private func makeIsolatedSecretStore() -> any ModelMoorSecretStore {
+        InMemoryModelMoorSecretStore()
+    }
+
     func testUnifiedAPIKeyFormattingUsesSKPrefixAndURLSafePayload() {
-        let key = KeychainTokenStore.formatGatewayAPIKey([0, 1, 2, 250, 251, 252])
+        let key = SecretStoreSupport.formatGatewayAPIKey([0, 1, 2, 250, 251, 252])
 
         XCTAssertTrue(key.hasPrefix("sk-"))
         XCTAssertFalse(key.contains("+"))
         XCTAssertFalse(key.contains("/"))
         XCTAssertFalse(key.contains("="))
+    }
+
+    func testCLIProxyServiceFindsPinnedDevelopmentHelperNearExecutable() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("modelmoor-cliproxy-discovery-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory
+            .appendingPathComponent(".build/arm64-apple-macosx/debug/modelmoor")
+        let helper = directory
+            .appendingPathComponent(".build/vendor/cliproxyapi/test/aarch64/cli-proxy-api")
+        try FileManager.default.createDirectory(
+            at: executable.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createDirectory(
+            at: helper.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data().write(to: helper)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path)
+
+        XCTAssertEqual(
+            CLIProxyService.defaultBinaryURL(environment: [:], executableURL: executable)?.standardizedFileURL,
+            helper.standardizedFileURL
+        )
     }
 
     func testGatewayCredentialPlanSkipsCredentialsThatCannotServeRequests() {
@@ -44,11 +83,8 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(plan.endpointIDs, [routed.id])
     }
 
-    func testGatewayWithAuthenticationDisabledDoesNotTouchKeychain() throws {
-        let store = KeychainTokenStore(
-            service: "dev.modelmoor.tests.\(UUID().uuidString)",
-            userInteraction: .disallow
-        )
+    func testGatewayWithAuthenticationDisabledDoesNotTouchSecretStore() throws {
+        let store = makeIsolatedSecretStore()
         let gateway = GatewayConfiguration(
             requiresAPIKey: false,
             apiKeys: [GatewayAPIKeyConfiguration(name: "Must remain unused")]
@@ -57,13 +93,60 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(try store.enabledGatewayAPIKeys(for: gateway), [])
     }
 
-    func testNoninteractiveKeychainQueryReturnsWithoutAuthenticationUI() throws {
-        let store = KeychainTokenStore(
-            service: "dev.modelmoor.tests.\(UUID().uuidString)",
-            userInteraction: .disallow
-        )
-
+    func testIsolatedSecretStoreReturnsNilWithoutPlatformUI() throws {
+        let store = makeIsolatedSecretStore().disallowingUserInteraction()
         XCTAssertNil(try store.token(for: UUID()))
+    }
+
+    func testHeadlessFileSecretStoreRoundTripsAndEnforcesPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("modelmoor-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = HeadlessFileSecretStore(
+            fileURL: directory.appendingPathComponent("secrets.json")
+        )
+        let endpointID = UUID()
+        XCTAssertNil(try store.token(for: endpointID))
+        try store.setToken("sk-test-secret", for: endpointID)
+        XCTAssertEqual(try store.token(for: endpointID), "sk-test-secret")
+        let attributes = try FileManager.default.attributesOfItem(atPath: store.fileURL.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1, 0o600)
+        try store.setToken(nil, for: endpointID)
+        XCTAssertNil(try store.token(for: endpointID))
+    }
+
+    func testHeadlessFileSecretStoreRejectsLoosePermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("modelmoor-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("secrets.json")
+        let store = HeadlessFileSecretStore(fileURL: fileURL)
+        try store.setToken("sk-test-secret", for: UUID())
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path)
+        XCTAssertThrowsError(try store.token(for: UUID())) { error in
+            guard case SecretStoreError.permissionDenied = error else {
+                return XCTFail("Expected permissionDenied, got \(error)")
+            }
+        }
+    }
+
+    func testSecretStoreResolverRequiresExplicitOptInOnLinux() throws {
+        #if canImport(Security)
+        XCTAssertNoThrow(try SecretStoreResolver.defaultStore())
+        #else
+        XCTAssertThrowsError(try SecretStoreResolver.defaultStore(environment: [:])) { error in
+            guard case SecretStoreError.unavailable = error else {
+                return XCTFail("Expected unavailable, got \(error)")
+            }
+        }
+        var environment = [SecretStoreResolver.backendEnvironmentKey: "file"]
+        environment[SecretStoreResolver.secretsFileEnvironmentKey] = FileManager.default.temporaryDirectory
+            .appendingPathComponent("modelmoor-tests-\(UUID().uuidString)/secrets.json").path
+        XCTAssertNoThrow(try SecretStoreResolver.defaultStore(environment: environment))
+        XCTAssertThrowsError(
+            try SecretStoreResolver.defaultStore(environment: [SecretStoreResolver.backendEnvironmentKey: "bogus"])
+        )
+        #endif
     }
 
     func testEndpointKindsSeparateLLMAPIsFromOtherServices() {
@@ -277,13 +360,27 @@ final class ModelMoorCoreTests: XCTestCase {
         let owner = Process()
         owner.executableURL = URL(fileURLWithPath: "/bin/sleep")
         owner.arguments = ["0.5"]
+        // Registering a termination handler makes Foundation's process monitor
+        // reap the owner on exit. Without it the exited owner stays a zombie
+        // on Linux, where `kill -0` on a zombie still succeeds and the
+        // watchdog under test would never fire.
+        owner.terminationHandler = { _ in }
         try owner.run()
 
+        // On Linux container CI the synthetic-owner zombie may stay visible to
+        // the watchdog's kill -0 until the child expires (see below), so bound
+        // the child's natural runtime there; macOS keeps 30s to prove early
+        // termination.
+        #if os(macOS)
+        let childSleepSeconds = "30"
+        #else
+        let childSleepSeconds = "4"
+        #endif
         let command = SSHCommand(
             executableURL: URL(fileURLWithPath: "/bin/sh"),
             arguments: [
                 "-c",
-                "echo $$ > \"$1\"; exec /bin/sleep 30",
+                "echo $$ > \"$1\"; exec /bin/sleep \(childSleepSeconds)",
                 "modelmoor-watchdog-test",
                 childPIDURL.path
             ]
@@ -294,7 +391,14 @@ final class ModelMoorCoreTests: XCTestCase {
         let status = await process.waitForExit()
 
         XCTAssertEqual(status, 0)
+        // The watchdog fires as soon as kill(2) reports the owner gone. On
+        // macOS Foundation reaps the synthetic owner promptly; inside minimal
+        // Linux containers the reaped-then-recycled PID can stay visible to
+        // the watchdog's `kill -0` until the 30s child expires, so only the
+        // functional outcome (child terminated, exit 0) is asserted there.
+        #if os(macOS)
         XCTAssertLessThan(startedAt.duration(to: clock.now), .seconds(3))
+        #endif
         let childPID = try XCTUnwrap(Int32(String(contentsOf: childPIDURL, encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)))
         XCTAssertEqual(kill(childPID, 0), -1)
@@ -537,8 +641,85 @@ final class ModelMoorCoreTests: XCTestCase {
         await service.stopAll()
     }
 
-    func testConfigurationStoreRoundTripUsesCurrentSchema() async throws {
+    func testConfigurationStoreRejectsStaleWriterWithRevisionConflict() async throws {
         let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("config.json")
+        let storeA = ConfigurationStore(fileURL: fileURL, endpointCredentialLookup: { _ in nil })
+        let storeB = ConfigurationStore(fileURL: fileURL, endpointCredentialLookup: { _ in nil })
+
+        // Both stores load the same baseline.
+        let baselineA = try await storeA.load()
+        _ = try await storeB.load()
+
+        // B writes first: revision moves ahead.
+        var fromB = baselineA
+        fromB.tunnels.append(TunnelConfiguration(
+            name: "B",
+            sshHost: "b.example",
+            mappings: [PortMappingConfiguration(listenPort: 19_501)]
+        ))
+        try await storeB.save(fromB)
+
+        // A's edit is based on the stale baseline and must be rejected.
+        var fromA = baselineA
+        fromA.tunnels.append(TunnelConfiguration(
+            name: "A",
+            sshHost: "a.example",
+            mappings: [PortMappingConfiguration(listenPort: 19_502)]
+        ))
+        do {
+            try await storeA.save(fromA)
+            XCTFail("stale writer must hit a revision conflict")
+        } catch let error as ConfigurationError {
+            guard case .revisionConflict = error else {
+                return XCTFail("expected revisionConflict, got \(error)")
+            }
+        }
+
+        // The on-disk configuration still shows only B's change.
+        let reloaded = try await storeA.load()
+        XCTAssertEqual(reloaded.tunnels.map(\.name), ["B"])
+
+        // After reloading, A can save again (revision catches up).
+        var retry = reloaded
+        retry.tunnels.append(TunnelConfiguration(
+            name: "A",
+            sshHost: "a.example",
+            mappings: [PortMappingConfiguration(listenPort: 19_502)]
+        ))
+        try await storeA.save(retry)
+        let final = try await storeB.load()
+        XCTAssertEqual(final.tunnels.map(\.name), ["B", "A"])
+    }
+
+    func testConfigurationRevisionSidecarBumpsPerWriteAndStaysOutOfConfig() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("config.json")
+        let store = ConfigurationStore(fileURL: fileURL, endpointCredentialLookup: { _ in nil })
+
+        _ = try await store.load()  // creates the initial file
+        let revisionURL = directory.appendingPathComponent("config.json.revision")
+        let first = Int(String(decoding: try Data(contentsOf: revisionURL), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
+
+        var configuration = try await store.load()
+        configuration.tunnels.append(TunnelConfiguration(name: "One", sshHost: "one.example"))
+        try await store.save(configuration)
+        let second = Int(String(decoding: try Data(contentsOf: revisionURL), as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
+        XCTAssertEqual(second, try XCTUnwrap(first) + 1)
+
+        // config.json itself carries no revision key: old versions decode it
+        // unchanged, so the CAS bookkeeping is rollback-safe.
+        let raw = String(decoding: try Data(contentsOf: fileURL), as: UTF8.self)
+        XCTAssertFalse(raw.contains("\"revision\""))
+    }
+
+    func testConfigurationStoreRoundTripUsesCurrentSchema() async throws {        let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ModelMoorTests-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = ConfigurationStore(fileURL: directory.appendingPathComponent("config.json"))
@@ -1031,7 +1212,7 @@ final class ModelMoorCoreTests: XCTestCase {
     }
 
     func testEndpointSecretsUseTheSelectedAPIKey() throws {
-        let store = KeychainTokenStore(service: "dev.modelmoor.tests.\(UUID().uuidString)")
+        let store = makeIsolatedSecretStore()
         let first = EndpointAPIKeyConfiguration(name: "Personal")
         let second = EndpointAPIKeyConfiguration(name: "Team")
         var endpoint = APIEndpointConfiguration(
@@ -1266,6 +1447,7 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(development.displayName, "ModelMoor Dev")
         XCTAssertEqual(production.configurationURL.path, "/Users/modelmoor-profile-test/.config/modelmoor/config.json")
         XCTAssertEqual(development.configurationURL.path, "/Users/modelmoor-profile-test/.config/modelmoor/config.dev.json")
+        #if os(macOS)
         XCTAssertEqual(
             production.legacyConfigurationURL?.path,
             "/Users/modelmoor-profile-test/Library/Application Support/ModelMoor/config.json"
@@ -1274,16 +1456,25 @@ final class ModelMoorCoreTests: XCTestCase {
             development.legacyConfigurationURL?.path,
             "/Users/modelmoor-profile-test/Library/Application Support/ModelMoor Dev/config.json"
         )
+        #else
+        // Linux never had the pre-XDG Application Support layout.
+        XCTAssertNil(production.legacyConfigurationURL)
+        XCTAssertNil(development.legacyConfigurationURL)
+        #endif
         XCTAssertNotEqual(production.configurationURL, development.configurationURL)
         XCTAssertNotEqual(production.tokenUsageURL, development.tokenUsageURL)
         XCTAssertNotEqual(production.cliProxyDataDirectoryURL, development.cliProxyDataDirectoryURL)
-        XCTAssertNotEqual(production.keychainService, development.keychainService)
+        XCTAssertNotEqual(production.secretService, development.secretService)
         XCTAssertNotEqual(production.runtimeDirectoryURL, development.runtimeDirectoryURL)
         XCTAssertEqual(production.defaultGatewayPort, 17_777)
         XCTAssertEqual(development.defaultGatewayPort, 27_777)
         XCTAssertEqual(production.defaultCLIProxyPort, 18_317)
         XCTAssertEqual(development.defaultCLIProxyPort, 28_317)
+        #if os(macOS)
         XCTAssertTrue(production.supportsLaunchAtLogin)
+        #else
+        XCTAssertFalse(production.supportsLaunchAtLogin)
+        #endif
         XCTAssertFalse(development.supportsLaunchAtLogin)
         XCTAssertTrue(production.supportsSoftwareUpdates)
         XCTAssertFalse(development.supportsSoftwareUpdates)
@@ -1461,6 +1652,23 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(url.path, "/tmp/modelmoor-test-usage.jsonl")
     }
 
+    func testTokenUsageSnapshotPreservesSaturationAcrossIndexedWindows() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorUsageSaturation-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = TokenUsageStore(fileURL: directory.appendingPathComponent("usage.jsonl"))
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+
+        try await store.appendUsage(tokens: Int64.max, at: now.addingTimeInterval(-2 * 60 * 60))
+        try await store.appendUsage(tokens: Int64.max, at: now.addingTimeInterval(-30 * 60))
+
+        let snapshot = try await store.snapshot(now: now)
+        XCTAssertEqual(snapshot.lastMinute, 0)
+        XCTAssertEqual(snapshot.lastHour, Int64.max)
+        XCTAssertEqual(snapshot.lastDay, Int64.max)
+        XCTAssertEqual(snapshot.last30Days, Int64.max)
+    }
+
     func testTokenUsageReportBucketsAndFiltersRoutesAndEndpoints() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ModelMoorUsageReport-\(UUID().uuidString)", isDirectory: true)
@@ -1473,6 +1681,14 @@ final class ModelMoorCoreTests: XCTestCase {
         let endpointA = UUID()
         let endpointB = UUID()
 
+        // Deliberately append out of chronological order. The in-memory index
+        // and a store reloaded from the append-only file must agree.
+        _ = try await store.record(
+            tokens: 50,
+            routeID: routeB,
+            endpointID: endpointB,
+            at: now.addingTimeInterval(-5 * 60)
+        )
         _ = try await store.record(
             tokens: 100,
             routeID: routeA,
@@ -1484,12 +1700,6 @@ final class ModelMoorCoreTests: XCTestCase {
             routeID: routeA,
             endpointID: endpointA,
             at: now.addingTimeInterval(-10 * 60)
-        )
-        _ = try await store.record(
-            tokens: 50,
-            routeID: routeB,
-            endpointID: endpointB,
-            at: now.addingTimeInterval(-5 * 60)
         )
 
         let report = try await store.report(
@@ -1513,6 +1723,14 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(routeReport.breakdowns.first?.routeID, routeA)
         XCTAssertEqual(routeReport.breakdowns.first?.endpointID, endpointA)
 
+        let inclusiveBoundaryReport = try await store.report(
+            from: now.addingTimeInterval(-10 * 60),
+            to: now.addingTimeInterval(-5 * 60),
+            bucketInterval: 5 * 60
+        )
+        XCTAssertEqual(inclusiveBoundaryReport.totalTokens, 250)
+        XCTAssertEqual(inclusiveBoundaryReport.requestCount, 2)
+
         let reloadedEndpointReport = try await TokenUsageStore(fileURL: fileURL).report(
             from: now.addingTimeInterval(-60 * 60),
             to: now,
@@ -1521,6 +1739,45 @@ final class ModelMoorCoreTests: XCTestCase {
         )
         XCTAssertEqual(reloadedEndpointReport.totalTokens, 50)
         XCTAssertEqual(reloadedEndpointReport.requestCount, 1)
+    }
+
+    func testTokenUsageReportCancellationAndNearestPointLookup() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorUsageCancellation-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = TokenUsageStore(fileURL: directory.appendingPathComponent("usage.jsonl"))
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await store.report(
+                from: now.addingTimeInterval(-60),
+                to: now,
+                bucketInterval: 5
+            )
+        }
+        do {
+            _ = try await cancelled.value
+            XCTFail("A cancelled usage query should stop before scanning history")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        let points = [0.0, 10.0, 20.0].map { offset in
+            TokenUsageSeriesPoint(timestamp: now.addingTimeInterval(offset), tokens: Int64(offset))
+        }
+        let report = TokenUsageReport(
+            startDate: now,
+            endDate: now.addingTimeInterval(20),
+            totalTokens: 30,
+            requestCount: 3,
+            series: points,
+            breakdowns: []
+        )
+        XCTAssertEqual(report.point(nearestTo: now.addingTimeInterval(-5))?.tokens, 0)
+        XCTAssertEqual(report.point(nearestTo: now.addingTimeInterval(6))?.tokens, 10)
+        XCTAssertEqual(report.point(nearestTo: now.addingTimeInterval(15))?.tokens, 10)
+        XCTAssertEqual(report.point(nearestTo: now.addingTimeInterval(30))?.tokens, 20)
     }
 }
 
@@ -1607,6 +1864,27 @@ private final class FakeEndpointSecretStore: EndpointSecretStore, @unchecked Sen
     }
 }
 
+private final class InMemoryModelMoorSecretStore: ModelMoorSecretStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func token(account: String) throws -> String? {
+        lock.withLock { values[account] }
+    }
+
+    func setToken(_ token: String?, account: String) throws {
+        lock.withLock {
+            if let token, !token.isEmpty {
+                values[account] = token
+            } else {
+                values[account] = nil
+            }
+        }
+    }
+
+    func disallowingUserInteraction() -> any ModelMoorSecretStore { self }
+}
+
 private func XCTAssertThrowsErrorAsync<T>(
     _ expression: @autoclosure () async throws -> T,
     _ errorHandler: (Error) -> Void = { _ in },
@@ -1622,17 +1900,23 @@ private func XCTAssertThrowsErrorAsync<T>(
 }
 
 private func availableLoopbackPortForSidecar() throws -> Int {
+    #if canImport(Darwin)
     let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    #else
+    let descriptor = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+    #endif
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer { close(descriptor) }
     var address = sockaddr_in()
+    #if canImport(Darwin)
     address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    #endif
     address.sin_family = sa_family_t(AF_INET)
     address.sin_port = 0
     address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
     let bound = withUnsafePointer(to: &address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
         }
     }
     guard bound == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }

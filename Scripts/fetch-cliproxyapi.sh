@@ -3,16 +3,16 @@ set -euo pipefail
 
 SCRIPT_DIR="${0:A:h}"
 PROJECT_DIR="${SCRIPT_DIR:h}"
-VERSION="7.2.137"
+VERSION="7.2.140"
 
 case "$(uname -m)" in
   arm64)
     RELEASE_ARCH="aarch64"
-    EXPECTED_SHA256="154a8d19b397dc1558b3c5bc660ea34136ce2591d90ba1243672c0d610a9268d"
+    EXPECTED_SHA256="47aa529e29a75804283ad44206390e1c35b290e2c4e191739bd82759461ec7e7"
     ;;
   x86_64)
     RELEASE_ARCH="amd64"
-    EXPECTED_SHA256="202cca09460c548d7e8a88b261fd7def09378b6064b2c631df7ca80a2764d32b"
+    EXPECTED_SHA256="a4adccf70ce97ffbc10f0f38cf19be21e7d5d651bbf336719769af635a786820"
     ;;
   *)
     print -u2 "error: unsupported macOS architecture: $(uname -m)"

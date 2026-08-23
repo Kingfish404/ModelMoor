@@ -9,8 +9,8 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and publish macOS release
+  macos:
+    name: Build macOS release
     runs-on: macos-latest
     steps:
       - name: Check out source
@@ -18,6 +18,14 @@ jobs:
 
       - name: Install icon renderer
         run: brew install librsvg
+
+      - name: Resolve SwiftPM dependencies
+        run: |
+          swift package resolve
+          swift package resolve --package-path Apps/TUI
+
+      - name: Patch SwiftPM terminal dependencies
+        run: ./Scripts/patch-termkit-swiftpm.sh
 
       - name: Run tests
         run: make test
@@ -35,7 +43,115 @@ jobs:
           path: ModelMoor-${{ github.ref_name }}-macos.zip
           if-no-files-found: error
 
+  linux:
+    name: Build Linux release (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    container: swift:6.1-noble
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            uname: x86_64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            uname: aarch64
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Show toolchain version
+        run: swift --version
+
+      - name: Check architecture boundaries
+        run: ./Scripts/check-layering.sh
+
+      - name: Install TUI test and packaging dependencies
+        run: apt-get update -qq && apt-get install -y -qq file libncurses-dev python3
+
+      - name: Resolve SwiftPM dependencies
+        run: |
+          swift package resolve
+          swift package resolve --package-path Apps/TUI
+
+      - name: Patch SwiftPM terminal dependencies
+        run: ./Scripts/patch-termkit-swiftpm.sh
+
+      - name: Run root tests
+        run: swift test
+
+      - name: Run TUI package tests
+        run: swift test --package-path Apps/TUI
+
+      - name: Build release CLI
+        run: swift build -c release --product modelmoor
+
+      - name: Build release TUI
+        run: swift build -c release --package-path Apps/TUI
+
+      - name: Run default CLI TUI terminal smoke test
+        run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --show-bin-path)/modelmoor"
+
+      - name: Run CLI signal smoke test
+        run: python3 Scripts/test-cli-signal.py "$(swift build -c release --show-bin-path)/modelmoor"
+
+      - name: Run TUI terminal smoke test
+        run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --package-path Apps/TUI --show-bin-path)/modelmoor-tui"
+
+      - name: Verify target architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.uname }}
+        run: |
+          test "$(uname -m)" = "$EXPECTED_ARCH"
+          file "$(swift build -c release --show-bin-path)/modelmoor" \
+            "$(swift build -c release --package-path Apps/TUI --show-bin-path)/modelmoor-tui"
+
+      - name: Package release archive
+        env:
+          RELEASE_ARCH: ${{ matrix.arch }}
+        run: |
+          mkdir -p "dist/ModelMoor-${GITHUB_REF_NAME}-linux-${RELEASE_ARCH}"
+          cp "$(swift build -c release --show-bin-path)/modelmoor" \
+            "dist/ModelMoor-${GITHUB_REF_NAME}-linux-${RELEASE_ARCH}/"
+          cp "$(swift build -c release --package-path Apps/TUI --show-bin-path)/modelmoor-tui" \
+            "dist/ModelMoor-${GITHUB_REF_NAME}-linux-${RELEASE_ARCH}/"
+          cp LICENSE README.md "dist/ModelMoor-${GITHUB_REF_NAME}-linux-${RELEASE_ARCH}/"
+          tar -C dist -czf \
+            "ModelMoor-${GITHUB_REF_NAME}-linux-${RELEASE_ARCH}.tar.gz" \
+            "ModelMoor-${GITHUB_REF_NAME}-linux-${RELEASE_ARCH}"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ModelMoor-${{ github.ref_name }}-linux-${{ matrix.arch }}
+          path: ModelMoor-${{ github.ref_name }}-linux-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub release
+    needs: [macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ModelMoor-${{ github.ref_name }}-*
+          path: dist
+          merge-multiple: true
+
+      - name: Verify release assets
+        run: |
+          test -f "dist/ModelMoor-${GITHUB_REF_NAME}-macos.zip"
+          test -f "dist/ModelMoor-${GITHUB_REF_NAME}-linux-x86_64.tar.gz"
+          test -f "dist/ModelMoor-${GITHUB_REF_NAME}-linux-aarch64.tar.gz"
+          ls -lh dist
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "ModelMoor-${GITHUB_REF_NAME}-macos.zip" --generate-notes --title "ModelMoor $GITHUB_REF_NAME"
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --title "ModelMoor $GITHUB_REF_NAME"

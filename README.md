@@ -70,7 +70,10 @@ The Mac must keep ModelMoor and the SSH connection running. Both listeners remai
 - Keeps non-LLM forwarded services in a collapsed **Others** sidebar group instead of reporting API warnings
 - Supports direct HTTPS OpenAI-compatible endpoints such as DeepSeek, with one Keychain secret per endpoint
 - Connects ChatGPT/Codex, Claude Code, Google Antigravity, Kimi, and xAI/Grok subscription accounts through a bundled, ModelMoor-managed CLIProxyAPI helper
+- Keeps that managed helper under the same single runtime-owner boundary as SSH and the Unified API, so a read-only GUI never launches a duplicate process while the CLI or TUI owns the runtime
 - Discovers OpenAI-compatible and Ollama models and reports endpoint health independently from SSH state
+- Searches SSH connections, endpoints, forwarded services, and discovered model IDs directly from the macOS sidebar
+- Localizes critical macOS navigation, commands, status, settings, and update flows in English and Simplified Chinese
 - Routes stable public model aliases to exact upstream models without fallback, load balancing, or inference retries
 - Serves a loopback-only `/v1/models`, with optional multi-key bearer authentication, and streams OpenAI-compatible responses, including SSE
 - Provides a dedicated Usage panel with time, model, and endpoint filters, a token trend chart, and per-model breakdowns
@@ -198,8 +201,25 @@ modelmoor ssh-command [NAME]
 modelmoor enable NAME
 modelmoor disable NAME
 modelmoor remove NAME
+modelmoor doctor
 modelmoor config-path
 ```
+
+`modelmoor doctor` runs read-only diagnostics over configuration, OpenSSH, SSH transports, endpoints and the Unified API without acquiring the runtime. It prints one tab-separated line per check (`ok`/`warn`/`fail`) and exits with a stable layer code: `0` healthy, `10` configuration, `20` system environment, `30` SSH transport, `40` endpoint authentication, `50` API/protocol, `60` Gateway.
+
+The macOS app also exposes **Copy Diagnostic Summary** from Settings, the Help menu, and the menu-bar menu. This copies the shared bounded runtime event summary; credentials, inference content, and full home-directory paths are redacted.
+
+## TUI
+
+Running `modelmoor` with no subcommand opens the cross-platform terminal console. `--help` and every explicit command remain conventional CLI commands; `modelmoor-tui` remains available as a standalone compatibility executable. The console has Overview, SSH Connections, API Endpoints, Unified API, Needs Attention, and Settings panes. Use Tab or the mouse to move focus and select rows. Pane text is read-only: the bottom `moor>` shell is the only place to enter commands or modify configuration and runtime state.
+
+The shell supports `add ssh`, `add port`, `add api`, `subs`, `gateway`, `connect [name]`, `disconnect [name]`, `filter <terms>`, `clear-filter`, `refresh`, `status`, and `quit`. Enter `help` in the shell for the full list. `r` refreshes, `?` or F1 opens keyboard help, and `q` quits. The terminal UI always uses ASCII glyphs and borders.
+
+The TUI shares the single runtime owner lock with the GUI and `modelmoor run`; it starts read-only and shows the current owner instead of taking over. When stdin/stdout are not TTYs it prints a stable plain-text snapshot and exits; configuration or startup failures write a `modelmoor-tui:` error to stderr and return a nonzero status.
+
+## Linux
+
+The root package (Core/System/Gateway) and the `modelmoor` CLI build and test on Ubuntu 22.04/24.04; `modelmoor-tui` is cross-platform as well. Paths follow XDG (`~/.config/modelmoor`, `~/.local/share/modelmoor`, `$XDG_RUNTIME_DIR`). On Linux, API keys and Unified API keys are stored only after you explicitly enable the owner-only file secret backend (`MODELMOOR_SECRET_BACKEND=file`, optionally `MODELMOOR_SECRETS_FILE=/path`); without it, reads behave as "no secret" and writes fail with guidance — no silent plaintext downgrade. See docs/development.md for the container-based Linux verification workflow.
 
 For testing or automation, set `MODELMOOR_CONFIG=/path/to/config.json` to avoid modifying the real configuration.
 

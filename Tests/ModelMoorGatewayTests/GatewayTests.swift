@@ -1,22 +1,29 @@
+#if canImport(Darwin)
 import Darwin
+#elseif canImport(Glibc)
+import Glibc
+#endif
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import ModelMoorCore
 @testable import ModelMoorGateway
 import XCTest
 
 final class GatewayTests: XCTestCase {
     func testLoopbackListenerServesAuthenticatedModelList() async throws {
-        let port = try unusedLoopbackPort()
         let fixture = makeFixture()
         var configuration = fixture.snapshot.configuration
-        configuration.gateway = GatewayConfiguration(enabled: true, listenPort: port)
-        let service = GatewayService()
+        configuration.gateway = GatewayConfiguration(enabled: true, listenPort: 17_777)
+        let service = ephemeralGatewayService()
         try await service.start(snapshot: GatewaySnapshot(
             configuration: configuration,
             gatewayAPIKeys: fixture.snapshot.gatewayAPIKeys,
             endpointSecrets: fixture.snapshot.endpointSecrets
         ))
         defer { Task { await service.stop() } }
+        let port = try XCTUnwrap(service.state.runningPort)
 
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/models")!)
         request.setValue("Bearer local-token", forHTTPHeaderField: "Authorization")
@@ -31,7 +38,6 @@ final class GatewayTests: XCTestCase {
     func testGatewayStreamsSSEBeforeUpstreamCompletesAndRewritesCredential() async throws {
         let upstream = try LoopbackSSEFixture()
         defer { upstream.allowSecondEvent() }
-        let gatewayPort = try unusedLoopbackPort()
         let mapping = PortMappingConfiguration(listenPort: upstream.port, destinationPort: 8_888)
         let tunnel = TunnelConfiguration(name: "Remote", sshHost: "remote", mappings: [mapping])
         let endpoint = APIEndpointConfiguration(
@@ -48,10 +54,10 @@ final class GatewayTests: XCTestCase {
             tunnels: [tunnel],
             endpoints: [endpoint],
             routes: [route],
-            gateway: GatewayConfiguration(enabled: true, listenPort: gatewayPort)
+            gateway: GatewayConfiguration(enabled: true, listenPort: 17_777)
         )
         let usage = TestUsageRecorder()
-        let service = GatewayService(usageHandler: usage.record)
+        let service = ephemeralGatewayService(usageHandler: usage.record)
         try await service.start(snapshot: GatewaySnapshot(
             configuration: configuration,
             gatewayToken: "local-token",
@@ -59,6 +65,7 @@ final class GatewayTests: XCTestCase {
             availableMappingIDs: [mapping.id]
         ))
         defer { Task { await service.stop() } }
+        let gatewayPort = try XCTUnwrap(service.state.runningPort)
 
         let firstEventAtClient = TestSignal()
         let client = Task.detached {
@@ -88,11 +95,11 @@ final class GatewayTests: XCTestCase {
 
     func testGatewayTerminatesChunkedResponseWhenUpstreamSSEBreaksMidStream() async throws {
         let upstream = try LoopbackTruncatedSSEFixture()
-        let gatewayPort = try unusedLoopbackPort()
-        let configured = gatewayFixture(gatewayPort: gatewayPort, upstreamPort: upstream.port)
-        let service = GatewayService()
+        let configured = gatewayFixture(gatewayPort: 17_777, upstreamPort: upstream.port)
+        let service = ephemeralGatewayService()
         try await service.start(snapshot: configured.snapshot)
         defer { Task { await service.stop() } }
+        let gatewayPort = try XCTUnwrap(service.state.runningPort)
 
         let response = try sendRawStreamingGatewayRequest(port: gatewayPort)
 
@@ -118,11 +125,11 @@ final class GatewayTests: XCTestCase {
             )
         ] {
             let upstream = try LoopbackHTTPFixture(response: fixtureResponse)
-            let gatewayPort = try unusedLoopbackPort()
-            let configured = gatewayFixture(gatewayPort: gatewayPort, upstreamPort: upstream.port)
+            let configured = gatewayFixture(gatewayPort: 17_777, upstreamPort: upstream.port)
             let usage = TestUsageRecorder()
-            let service = GatewayService(usageHandler: usage.record)
+            let service = ephemeralGatewayService(usageHandler: usage.record)
             try await service.start(snapshot: configured.snapshot)
+            let gatewayPort = try XCTUnwrap(service.state.runningPort)
 
             var request = URLRequest(url: URL(string: "http://127.0.0.1:\(gatewayPort)/v1/chat/completions")!)
             request.httpMethod = "POST"
@@ -160,18 +167,19 @@ final class GatewayTests: XCTestCase {
     }
 
     func testGatewayPortConflictAndStopReleaseTheListener() async throws {
-        let port = try unusedLoopbackPort()
         let fixture = makeFixture()
         var configuration = fixture.snapshot.configuration
-        configuration.gateway = GatewayConfiguration(enabled: true, listenPort: port)
-        let snapshot = GatewaySnapshot(
+        configuration.gateway = GatewayConfiguration(enabled: true, listenPort: 17_777)
+        var snapshot = GatewaySnapshot(
             configuration: configuration,
             gatewayToken: "local-token",
             endpointSecrets: fixture.snapshot.endpointSecrets
         )
-        let first = GatewayService()
+        let first = ephemeralGatewayService()
         let second = GatewayService()
         try await first.start(snapshot: snapshot)
+        let port = try XCTUnwrap(first.state.runningPort)
+        snapshot.configuration.gateway.listenPort = port
         do {
             try await second.start(snapshot: snapshot)
             XCTFail("A second Gateway must not bind an occupied port")
@@ -193,16 +201,17 @@ final class GatewayTests: XCTestCase {
     }
 
     func testGatewayCoordinatorCoalescesConcurrentReconciliations() async throws {
-        let port = try unusedLoopbackPort()
         let fixture = makeFixture()
         var configuration = fixture.snapshot.configuration
-        configuration.gateway = GatewayConfiguration(enabled: true, listenPort: port)
+        configuration.gateway = GatewayConfiguration(enabled: true, listenPort: 17_777)
         let snapshot = GatewaySnapshot(
             configuration: configuration,
             gatewayToken: "local-token",
             endpointSecrets: fixture.snapshot.endpointSecrets
         )
-        let coordinator = GatewayServiceCoordinator()
+        let coordinator = GatewayServiceCoordinator {
+            GatewayService(upstreamCancellationObserver: nil, bindingPortOverride: 0)
+        }
 
         let states = await withTaskGroup(of: GatewayServiceState.self) { group in
             for _ in 0..<20 {
@@ -212,6 +221,7 @@ final class GatewayTests: XCTestCase {
         }
 
         XCTAssertEqual(states.count, 20)
+        let port = try XCTUnwrap(states.compactMap(\.runningPort).first)
         XCTAssertTrue(states.allSatisfy { $0 == .running(port: port) })
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/models")!)
         request.setValue("Bearer local-token", forHTTPHeaderField: "Authorization")
@@ -224,10 +234,10 @@ final class GatewayTests: XCTestCase {
     func testClientDisconnectCancelsTheUpstreamRequest() async throws {
         let upstream = try LoopbackCancellationFixture()
         let cancellation = TestSignal()
-        let gatewayPort = try unusedLoopbackPort()
-        let configured = gatewayFixture(gatewayPort: gatewayPort, upstreamPort: upstream.port)
-        let service = GatewayService(upstreamCancellationObserver: cancellation.signal)
+        let configured = gatewayFixture(gatewayPort: 17_777, upstreamPort: upstream.port)
+        let service = ephemeralGatewayService(upstreamCancellationObserver: cancellation.signal)
         try await service.start(snapshot: configured.snapshot)
+        let gatewayPort = try XCTUnwrap(service.state.runningPort)
 
         try sendGatewayRequestAndDisconnectAfterFirstEvent(port: gatewayPort)
         let cancelledInTime = cancellation.wait(seconds: 1)
@@ -283,10 +293,10 @@ final class GatewayTests: XCTestCase {
 
     func testConcurrencyLimitRejectsRatherThanQueuesAnAdditionalRequest() async throws {
         let upstream = try LoopbackCancellationFixture()
-        let gatewayPort = try unusedLoopbackPort()
-        let configured = gatewayFixture(gatewayPort: gatewayPort, upstreamPort: upstream.port)
-        let service = GatewayService(maximumActiveRequests: 1)
+        let configured = gatewayFixture(gatewayPort: 17_777, upstreamPort: upstream.port)
+        let service = ephemeralGatewayService(maximumActiveRequests: 1)
         try await service.start(snapshot: configured.snapshot)
+        let gatewayPort = try XCTUnwrap(service.state.runningPort)
 
         let first = Task { try await URLSession.shared.data(for: gatewayURLRequest(port: gatewayPort)) }
         XCTAssertTrue(upstream.waitUntilStreaming(seconds: 1))
@@ -559,29 +569,24 @@ final class GatewayTests: XCTestCase {
         )
     }
 
-    private func unusedLoopbackPort() throws -> Int {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
-        guard descriptor >= 0 else { throw POSIXError(.EIO) }
-        defer { close(descriptor) }
-        var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        address.sin_family = sa_family_t(AF_INET)
-        address.sin_port = 0
-        address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
-        let result = withUnsafePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
-            }
-        }
-        guard result == 0 else { throw POSIXError(.EADDRINUSE) }
-        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
-        let nameResult = withUnsafeMutablePointer(to: &address) { pointer in
-            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(descriptor, $0, &length)
-            }
-        }
-        guard nameResult == 0 else { throw POSIXError(.EIO) }
-        return Int(UInt16(bigEndian: address.sin_port))
+    private func ephemeralGatewayService(
+        maximumActiveRequests: Int = 64,
+        usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil,
+        upstreamCancellationObserver: (@Sendable () -> Void)? = nil
+    ) -> GatewayService {
+        GatewayService(
+            maximumActiveRequests: maximumActiveRequests,
+            usageHandler: usageHandler,
+            upstreamCancellationObserver: upstreamCancellationObserver,
+            bindingPortOverride: 0
+        )
+    }
+}
+
+private extension GatewayServiceState {
+    var runningPort: Int? {
+        guard case let .running(port) = self else { return nil }
+        return port
     }
 }
 
@@ -721,21 +726,23 @@ private final class LoopbackSSEFixture: @unchecked Sendable {
     var didSendSecondEvent: Bool { lock.withLock { sentSecond } }
 
     init() throws {
-        let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+        let descriptor = modelMoorTCPSocket()
         guard descriptor >= 0 else { throw POSIXError(.EIO) }
         var reuse: Int32 = 1
         setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
         var address = sockaddr_in()
-        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        #if canImport(Darwin)
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            #endif
         address.sin_family = sa_family_t(AF_INET)
         address.sin_port = 0
         address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
         let bindResult = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                modelMoorBind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
-        guard bindResult == 0, Darwin.listen(descriptor, 1) == 0 else {
+        guard bindResult == 0, listen(descriptor, 1) == 0 else {
             close(descriptor)
             throw POSIXError(.EADDRINUSE)
         }
@@ -776,21 +783,23 @@ private final class LoopbackSSEFixture: @unchecked Sendable {
 }
 
 private func makeLoopbackListener() throws -> (descriptor: Int32, port: Int) {
-    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    let descriptor = modelMoorTCPSocket()
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     var reuse: Int32 = 1
     setsockopt(descriptor, SOL_SOCKET, SO_REUSEADDR, &reuse, socklen_t(MemoryLayout<Int32>.size))
     var address = sockaddr_in()
-    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    #if canImport(Darwin)
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            #endif
     address.sin_family = sa_family_t(AF_INET)
     address.sin_port = 0
     address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
     let bindResult = withUnsafePointer(to: &address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            Darwin.bind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            modelMoorBind(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
         }
     }
-    guard bindResult == 0, Darwin.listen(descriptor, 1) == 0 else {
+    guard bindResult == 0, listen(descriptor, 1) == 0 else {
         close(descriptor)
         throw POSIXError(.EADDRINUSE)
     }
@@ -807,20 +816,22 @@ private func makeLoopbackListener() throws -> (descriptor: Int32, port: Int) {
 }
 
 private func sendGatewayRequestAndDisconnectAfterFirstEvent(port: Int) throws {
-    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    let descriptor = modelMoorTCPSocket()
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer {
-        _ = shutdown(descriptor, SHUT_RDWR)
+        _ = shutdown(descriptor, Int32(SHUT_RDWR))
         close(descriptor)
     }
     var address = sockaddr_in()
-    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    #if canImport(Darwin)
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            #endif
     address.sin_family = sa_family_t(AF_INET)
     address.sin_port = UInt16(port).bigEndian
     address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
     let connected = withUnsafePointer(to: &address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
         }
     }
     guard connected == 0 else { throw POSIXError(.ECONNREFUSED) }
@@ -847,17 +858,19 @@ private func gatewayURLRequest(port: Int) -> URLRequest {
 }
 
 private func sendRawStreamingGatewayRequest(port: Int) throws -> String {
-    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    let descriptor = modelMoorTCPSocket()
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer { close(descriptor) }
     var address = sockaddr_in()
-    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    #if canImport(Darwin)
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            #endif
     address.sin_family = sa_family_t(AF_INET)
     address.sin_port = UInt16(port).bigEndian
     address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
     let connected = withUnsafePointer(to: &address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
         }
     }
     guard connected == 0 else { throw POSIXError(.ECONNREFUSED) }
@@ -875,17 +888,19 @@ private func sendRawStreamingGatewayRequest(port: Int) throws -> String {
 }
 
 private func sendStreamingGatewayRequest(port: Int, firstEventAtClient: TestSignal) throws -> String {
-    let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+    let descriptor = modelMoorTCPSocket()
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
     defer { close(descriptor) }
     var address = sockaddr_in()
-    address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+    #if canImport(Darwin)
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            #endif
     address.sin_family = sa_family_t(AF_INET)
     address.sin_port = UInt16(port).bigEndian
     address.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
     let connected = withUnsafePointer(to: &address) { pointer in
         pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-            Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
         }
     }
     guard connected == 0 else { throw POSIXError(.ECONNREFUSED) }
@@ -938,7 +953,7 @@ private func sendAll(_ descriptor: Int32, _ string: String) {
     var sent = 0
     while sent < bytes.count {
         let count = bytes.withUnsafeBytes { pointer in
-            Darwin.send(descriptor, pointer.baseAddress!.advanced(by: sent), bytes.count - sent, 0)
+            send(descriptor, pointer.baseAddress!.advanced(by: sent), bytes.count - sent, 0)
         }
         guard count > 0 else { return }
         sent += count
@@ -951,4 +966,24 @@ private extension NSLock {
         defer { unlock() }
         return try body()
     }
+}
+
+/// Cross-platform TCP socket constructor: `SOCK_STREAM` is an Int32 on
+/// Darwin and a `__socket_type` enum on Linux.
+private func modelMoorTCPSocket() -> Int32 {
+    #if canImport(Darwin)
+    return socket(AF_INET, SOCK_STREAM, 0)
+    #else
+    return socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+    #endif
+}
+
+/// Unambiguous POSIX bind: unqualified `bind` collides with a member lookup
+/// on Darwin; Glibc/Darwin qualification differs per platform.
+private func modelMoorBind(_ descriptor: Int32, _ address: UnsafePointer<sockaddr>, _ length: socklen_t) -> Int32 {
+    #if canImport(Darwin)
+    return Darwin.bind(descriptor, address, length)
+    #else
+    return Glibc.bind(descriptor, address, length)
+    #endif
 }

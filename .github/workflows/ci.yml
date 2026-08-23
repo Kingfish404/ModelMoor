@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   test:
-    name: Test and build
+    name: Test and build (macOS)
     runs-on: macos-latest
     steps:
       - name: Check out source
@@ -23,11 +23,56 @@ jobs:
       - name: Install icon renderer
         run: brew install librsvg
 
-      - name: Run tests
-        run: make test
+      - name: Check architecture boundaries
+        run: make architecture-check
+
+      - name: Resolve SwiftPM dependencies
+        run: |
+          swift package resolve --disable-sandbox --cache-path .build/cache
+          swift package resolve --package-path Apps/TUI --disable-sandbox --cache-path .build/cache
+
+      - name: Patch SwiftPM terminal dependencies
+        run: ./Scripts/patch-termkit-swiftpm.sh
+
+      - name: Run root tests
+        run: swift test --disable-sandbox --cache-path .build/cache
+
+      - name: Run macOS GUI package tests
+        run: swift test --package-path Apps/macOS --disable-sandbox --cache-path .build/cache
+
+      - name: Check localization catalog and coverage
+        run: make localization-check
+
+      - name: Run TUI package tests
+        run: swift test --package-path Apps/TUI --disable-sandbox --cache-path .build/cache
+
+      - name: Build release TUI
+        run: make tui
+
+      - name: Build release default CLI TUI
+        run: swift build -c release --product modelmoor
+
+      - name: Default CLI TUI terminal restoration smoke test
+        run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --show-bin-path)/modelmoor"
+
+      - name: TUI terminal restoration smoke test
+        run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --package-path Apps/TUI --show-bin-path)/modelmoor-tui"
+
+      - name: TUI non-TTY snapshot smoke test
+        run: |
+          MODELMOOR_CONFIG=/tmp/modelmoor-ci-tui/config.json \
+            "$(swift build --package-path Apps/TUI --show-bin-path)/modelmoor-tui" < /dev/null | grep -q "\[moorings\]"
 
       - name: Build app bundle
         run: make app
+
+      - name: Verify app metadata and ad-hoc signature
+        run: |
+          plutil -lint .build/app/ModelMoor.app/Contents/Info.plist
+          codesign --verify --deep --strict .build/app/ModelMoor.app
+
+      - name: CLI foreground signal smoke test
+        run: python3 Scripts/test-cli-signal.py "$(swift build -c release --show-bin-path)/modelmoor"
 
       - name: Upload app bundle
         uses: actions/upload-artifact@v4
@@ -35,3 +80,75 @@ jobs:
           name: ModelMoor-app
           path: .build/app/ModelMoor.app
           if-no-files-found: error
+
+  test-linux:
+    name: Test and build (Ubuntu ${{ matrix.os }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: "22.04"
+            container: swift:6.1-jammy
+          - os: "24.04"
+            container: swift:6.1-noble
+    container: ${{ matrix.container }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Trust the workspace for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Show toolchain version
+        run: swift --version
+
+      - name: Check architecture boundaries
+        run: ./Scripts/check-layering.sh
+
+      - name: Install TUI test dependencies
+        run: apt-get update -qq && apt-get install -y -qq libncurses-dev python3
+
+      - name: Resolve SwiftPM dependencies
+        run: |
+          swift package resolve
+          swift package resolve --package-path Apps/TUI
+
+      - name: Patch SwiftPM terminal dependencies
+        run: ./Scripts/patch-termkit-swiftpm.sh
+
+      - name: Run root tests
+        run: swift test
+
+      - name: Run TUI package tests
+        run: swift test --package-path Apps/TUI
+
+      - name: Build release CLI
+        run: swift build -c release --product modelmoor
+
+      - name: Default CLI TUI terminal restoration smoke test
+        run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --show-bin-path)/modelmoor"
+
+      - name: CLI foreground signal smoke test
+        run: python3 Scripts/test-cli-signal.py "$(swift build -c release --show-bin-path)/modelmoor"
+
+      - name: Build release TUI
+        run: swift build -c release --package-path Apps/TUI
+
+      - name: TUI terminal restoration smoke test
+        run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --package-path Apps/TUI --show-bin-path)/modelmoor-tui"
+
+      - name: CLI smoke test
+        run: |
+          "$(swift build --show-bin-path)/modelmoor" help
+          mkdir -p /tmp/modelmoor-ci
+          export MODELMOOR_CONFIG=/tmp/modelmoor-ci/config.json
+          CLI="$(swift build --show-bin-path)/modelmoor"
+          "$CLI" init ci.example --listen-port 19901 --destination-port 8080
+          "$CLI" list
+          "$CLI" gateway status
+
+      - name: TUI non-TTY snapshot smoke test
+        run: |
+          export MODELMOOR_CONFIG=/tmp/modelmoor-ci/config.json
+          "$(swift build --package-path Apps/TUI --show-bin-path)/modelmoor-tui" < /dev/null | grep -q "\[moorings\]"

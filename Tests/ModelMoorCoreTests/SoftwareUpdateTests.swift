@@ -1,5 +1,6 @@
 import XCTest
 @testable import ModelMoorCore
+@testable import ModelMoorSystem
 
 final class SoftwareUpdateTests: XCTestCase {
     func testVersionComparisonHandlesNumericComponents() throws {

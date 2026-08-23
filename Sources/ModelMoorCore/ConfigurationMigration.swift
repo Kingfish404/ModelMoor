@@ -1,7 +1,7 @@
 import Foundation
 
-enum ConfigurationMigration {
-    static func migrateV2(_ data: Data) throws -> ModelMoorConfiguration {
+public enum ConfigurationMigration {
+    public static func migrateV2(_ data: Data) throws -> ModelMoorConfiguration {
         let object: Any
         do {
             object = try JSONSerialization.jsonObject(with: data)
@@ -22,7 +22,7 @@ enum ConfigurationMigration {
         }
     }
 
-    static func migrateV1(
+    public static func migrateV1(
         _ data: Data,
         endpointHasCredential: (UUID) -> Bool = { _ in false }
     ) throws -> ModelMoorConfiguration {

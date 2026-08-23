@@ -26,11 +26,23 @@ BUILD_OPTIONS := --disable-sandbox --cache-path $(CACHE_DIR)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build app app-dev cli debug test run run-dev run-release install clean
+.PHONY: help build app app-dev cli tui debug run run-dev run-release run-cli run-tui test test-root test-app test-tui test-cli-signal test-cli-tui-terminal test-tui-terminal test-all architecture-check localization-check install clean
 
 help: ## Show available build commands
-	@grep -E '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) \
-		| awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
+	@printf "Build:\n"
+	@$(MAKE) --no-print-directory help-group TARGETS="build app app-dev cli tui debug"
+	@printf "\nRun:\n"
+	@$(MAKE) --no-print-directory help-group TARGETS="run run-dev run-release run-cli run-tui"
+	@printf "\nTest and validation:\n"
+	@$(MAKE) --no-print-directory help-group TARGETS="test test-root test-app test-tui test-cli-signal test-cli-tui-terminal test-tui-terminal test-all architecture-check localization-check"
+	@printf "\nInstall and maintenance:\n"
+	@$(MAKE) --no-print-directory help-group TARGETS="install clean"
+
+.PHONY: help-group
+help-group:
+	@for target in $(TARGETS); do \
+		awk -v target="$$target" -F':.*## ' '$$1 == target {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST); \
+	done
 
 build: app ## Build the release app bundle and CLI (alias for app)
 
@@ -43,11 +55,21 @@ app-dev: ## Build the isolated ModelMoor Dev app bundle
 cli: ## Build the release CLI
 	swift build $(BUILD_OPTIONS) -c release
 
+tui: ## Build the standalone release TUI compatibility executable
+	swift build --package-path Apps/TUI $(BUILD_OPTIONS) -c release
+
 debug: ## Build the debug binaries
 	swift build $(BUILD_OPTIONS)
 
-test: ## Run the test suite
+test: architecture-check ## Run architecture checks and the root test suite
 	swift test $(BUILD_OPTIONS)
+
+architecture-check: ## Reject cross-layer platform/UI/terminal imports
+	./Scripts/check-layering.sh
+
+localization-check: ## Verify catalog parity and compiler-extracted GUI key coverage
+	./Scripts/sync-localizations.sh --check
+	./Scripts/check-localization-coverage.sh
 
 run: run-dev ## Build and open the isolated development app
 
@@ -56,6 +78,34 @@ run-dev: app-dev ## Build and open ModelMoor Dev
 
 run-release: app ## Build and open the production-profile app
 	open "$(APP_DIR)"
+
+run-cli: ## Run the debug CLI (pass arguments with ARGS='...')
+	swift run $(BUILD_OPTIONS) modelmoor $(ARGS)
+
+run-tui: ## Run the debug TUI (pass arguments with ARGS='...')
+	swift run --package-path Apps/TUI $(BUILD_OPTIONS) modelmoor-tui $(ARGS)
+
+test-root: test ## Run architecture checks and the root test suite (explicit alias)
+
+test-app: ## Run the macOS app package tests
+	swift test --package-path Apps/macOS $(BUILD_OPTIONS)
+
+test-tui: ## Run the TUI package tests
+	swift test --package-path Apps/TUI $(BUILD_OPTIONS)
+
+test-cli-signal: cli ## Verify CLI signal handling and cleanup
+	bin_path="$$(swift build $(BUILD_OPTIONS) -c release --show-bin-path)"; \
+		python3 Scripts/test-cli-signal.py "$$bin_path/modelmoor"
+
+test-cli-tui-terminal: cli ## Verify the default CLI TUI terminal behavior
+	bin_path="$$(swift build $(BUILD_OPTIONS) -c release --show-bin-path)"; \
+		python3 Scripts/test-tui-terminal.py "$$bin_path/modelmoor"
+
+test-tui-terminal: tui ## Verify TUI terminal, resize, and signal handling
+	bin_path="$$(swift build --package-path Apps/TUI $(BUILD_OPTIONS) -c release --show-bin-path)"; \
+		python3 Scripts/test-tui-terminal.py "$$bin_path/modelmoor-tui"
+
+test-all: test-root test-app test-tui test-cli-signal test-cli-tui-terminal test-tui-terminal ## Run all unit and terminal integration tests
 
 install: app ## Build and install to /Applications
 	rm -rf /Applications/ModelMoor.app

@@ -309,12 +309,18 @@ public enum ConfigurationError: LocalizedError, Equatable {
     case invalidValue(String)
     case unreadable(String)
     case unsupportedSchema(Int)
+    /// Cross-process compare-and-swap: the on-disk configuration moved past
+    /// the revision the caller based its edit on. Callers should reload and
+    /// retry instead of overwriting.
+    case revisionConflict(onDisk: Int, basedOn: Int)
 
     public var errorDescription: String? {
         switch self {
         case let .invalidValue(message), let .unreadable(message): message
         case let .unsupportedSchema(version):
             "Unsupported configuration schema \(version). This version of ModelMoor supports schema \(ModelMoorConfiguration.currentSchemaVersion); update ModelMoor before editing this file."
+        case let .revisionConflict(onDisk, basedOn):
+            "The configuration changed on disk (revision \(onDisk)) while this writer was based on revision \(basedOn). Reload and re-apply the change instead of overwriting."
         }
     }
 }

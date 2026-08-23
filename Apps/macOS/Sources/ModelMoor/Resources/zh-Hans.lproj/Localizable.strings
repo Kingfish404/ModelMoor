@@ -1,0 +1,796 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>%@  ·  %@ tokens</key>
+	<string>%1$@ · %2$@ 个令牌</string>
+	<key>%@ has unapplied changes. Apply them before leaving this view?</key>
+	<string>%@ 有尚未应用的更改。离开此视图前要应用它们吗？</string>
+	<key>%@ tokens in 24 hours</key>
+	<string>24 小时内 %@ 个令牌</string>
+	<key>%@, %@</key>
+	<string>%1$@，%2$@</string>
+	<key>%@, %@ tokens</key>
+	<string>%1$@，%2$@ 个令牌</string>
+	<key>%@. %@</key>
+	<string>%1$@。%2$@</string>
+	<key>%lld active of %lld</key>
+	<string>%2$lld 个账户中有 %1$lld 个活跃</string>
+	<key>%lld active of %lld accounts</key>
+	<string>%2$lld 个账户中有 %1$lld 个活跃</string>
+	<key>%lld models discovered</key>
+	<string>发现 %lld 个模型</string>
+	<key>1 active account</key>
+	<string>1 个活跃账户</string>
+	<key>1 disabled account</key>
+	<string>1 个已停用账户</string>
+	<key>1 model discovered</key>
+	<string>发现 1 个模型</string>
+	<key>A New Version Is Available</key>
+	<string>有新版本可用</string>
+	<key>API</key>
+	<string>API</string>
+	<key>API Endpoints</key>
+	<string>API 端点</string>
+	<key>API access</key>
+	<string>API 访问</string>
+	<key>API endpoint</key>
+	<string>API 端点</string>
+	<key>API endpoints</key>
+	<string>API 端点</string>
+	<key>API key</key>
+	<string>API 密钥</string>
+	<key>API key not set</key>
+	<string>未设置 API 密钥</string>
+	<key>API key, optional</key>
+	<string>API 密钥（可选）</string>
+	<key>API keys</key>
+	<string>API 密钥</string>
+	<key>API keys and management passwords are stored by macOS, not in a ModelMoor file.</key>
+	<string>API 密钥和管理密码由 macOS 保存，不会写入 ModelMoor 文件。</string>
+	<key>API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.</key>
+	<string>API 密钥和管理密码由 macOS 保存。旧版服务仅用于升级兼容性读取。</string>
+	<key>API keys, public model names, and route configuration stay in Unified API.</key>
+	<string>API 密钥、公开模型名称和路由配置均在统一 API 中管理。</string>
+	<key>Accept this key</key>
+	<string>接受此密钥</string>
+	<key>Accepted by Unified API</key>
+	<string>已被统一 API 接受</string>
+	<key>Account pool</key>
+	<string>账户池</string>
+	<key>Add</key>
+	<string>添加</string>
+	<key>Add API Endpoint</key>
+	<string>添加 API 端点</string>
+	<key>Add API Endpoint…</key>
+	<string>添加 API 端点…</string>
+	<key>Add API endpoint</key>
+	<string>添加 API 端点</string>
+	<key>Add API key</key>
+	<string>添加 API 密钥</string>
+	<key>Add Endpoint…</key>
+	<string>添加端点…</string>
+	<key>Add Key…</key>
+	<string>添加密钥…</string>
+	<key>Add Models…</key>
+	<string>添加模型…</string>
+	<key>Add Port Forward</key>
+	<string>添加端口转发</string>
+	<key>Add Raw Port Forward…</key>
+	<string>添加原始端口转发…</string>
+	<key>Add SSH Connection</key>
+	<string>添加 SSH 连接</string>
+	<key>Add and Copy</key>
+	<string>添加并复制</string>
+	<key>Add models</key>
+	<string>添加模型</string>
+	<key>Add models to Unified API</key>
+	<string>向统一 API 添加模型</string>
+	<key>Add port forward</key>
+	<string>添加端口转发</string>
+	<key>Address</key>
+	<string>地址</string>
+	<key>Advanced</key>
+	<string>高级</string>
+	<key>Advanced SSH Settings</key>
+	<string>高级 SSH 设置</string>
+	<key>All endpoints</key>
+	<string>所有端点</string>
+	<key>All models</key>
+	<string>所有模型</string>
+	<key>App Preferences</key>
+	<string>应用偏好设置</string>
+	<key>Apply Changes</key>
+	<string>应用更改</string>
+	<key>Apply Changes Before Continuing?</key>
+	<string>继续前要应用更改吗？</string>
+	<key>Apply Port Change</key>
+	<string>应用端口更改</string>
+	<key>At least one key must stay enabled while authentication is required.</key>
+	<string>要求身份验证时，必须至少保留一个已启用的密钥。</string>
+	<key>Authentication</key>
+	<string>身份验证</string>
+	<key>Automatically check for updates</key>
+	<string>自动检查更新</string>
+	<key>Back</key>
+	<string>返回</string>
+	<key>Base URL</key>
+	<string>基础 URL</string>
+	<key>Base path</key>
+	<string>基础路径</string>
+	<key>Basics</key>
+	<string>基本信息</string>
+	<key>Bearer API key, optional</key>
+	<string>Bearer API 密钥（可选）</string>
+	<key>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</key>
+	<string>CLIProxyAPI 辅助程序配置和 OAuth 账户文件；此文件夹可能包含敏感凭据。</string>
+	<key>Cancel</key>
+	<string>取消</string>
+	<key>Cancel Connection</key>
+	<string>取消连接</string>
+	<key>Check Now</key>
+	<string>立即检查</string>
+	<key>Check Reachability</key>
+	<string>检查可达性</string>
+	<key>Check for Updates…</key>
+	<string>检查更新…</string>
+	<key>Checking</key>
+	<string>正在检查</string>
+	<key>Checking GitHub for updates…</key>
+	<string>正在通过 GitHub 检查更新…</string>
+	<key>Checking for Updates…</key>
+	<string>正在检查更新…</string>
+	<key>Checking model list…</key>
+	<string>正在检查模型列表…</string>
+	<key>Checking…</key>
+	<string>正在检查…</string>
+	<key>Choose an SSH alias and define the first fixed or dynamic port forward.</key>
+	<string>选择一个 SSH 别名，并定义第一个固定或动态端口转发。</string>
+	<key>Choose model IDs from an OpenAI-compatible endpoint.</key>
+	<string>从兼容 OpenAI 的端点中选择模型 ID。</string>
+	<key>Choose which discovered models the Unified API should expose to clients.</key>
+	<string>选择统一 API 应向客户端公开哪些已发现的模型。</string>
+	<key>Clear Search</key>
+	<string>清除搜索</string>
+	<key>Clients send an enabled key as an Authorization bearer token.</key>
+	<string>客户端将已启用的密钥作为 Authorization Bearer 令牌发送。</string>
+	<key>Clients using %@ will immediately lose access.</key>
+	<string>使用 %@ 的客户端将立即失去访问权限。</string>
+	<key>Clients using %@ will need the replacement. The new key will be copied to the pasteboard.</key>
+	<string>使用 %@ 的客户端需要改用替换密钥。新密钥将复制到剪贴板。</string>
+	<key>Cloud API</key>
+	<string>云端 API</string>
+	<key>Collapse Others</key>
+	<string>收起其他项目</string>
+	<key>Command preview</key>
+	<string>命令预览</string>
+	<key>Configuration</key>
+	<string>配置</string>
+	<key>Configure in Unified API…</key>
+	<string>在统一 API 中配置…</string>
+	<key>Configure models</key>
+	<string>配置模型</string>
+	<key>Configured connections start in the menu bar without opening the main window.</key>
+	<string>已配置的连接会在菜单栏中启动，无需打开主窗口。</string>
+	<key>Connect</key>
+	<string>连接</string>
+	<key>Connect All</key>
+	<string>全部连接</string>
+	<key>Connect Selected</key>
+	<string>连接所选项目</string>
+	<key>Connect a supported provider below. You can add more than one account for each provider.</key>
+	<string>在下方连接受支持的提供商。每个提供商可以添加多个账户。</string>
+	<key>Connect after creation and at login</key>
+	<string>创建后连接并在登录时自动连接</string>
+	<key>Connect an account</key>
+	<string>连接账户</string>
+	<key>Connect another account</key>
+	<string>连接其他账户</string>
+	<key>Connect at login</key>
+	<string>登录时连接</string>
+	<key>Connect your first API</key>
+	<string>连接第一个 API</string>
+	<key>Connection</key>
+	<string>连接</string>
+	<key>Connection timeout</key>
+	<string>连接超时</string>
+	<key>Connect…</key>
+	<string>连接…</string>
+	<key>Continue</key>
+	<string>继续</string>
+	<key>Control command</key>
+	<string>控制命令</string>
+	<key>Copy %@</key>
+	<string>复制 %@</string>
+	<key>Copy %@ API key</key>
+	<string>复制 %@ API 密钥</string>
+	<key>Copy API key</key>
+	<string>复制 API 密钥</string>
+	<key>Copy Code</key>
+	<string>复制代码</string>
+	<key>Copy Diagnostic Summary</key>
+	<string>复制诊断摘要</string>
+	<key>Copy Local Address</key>
+	<string>复制本地地址</string>
+	<key>Copy Model ID</key>
+	<string>复制模型 ID</string>
+	<key>Copy Model ID, %lld</key>
+	<string>复制模型 ID，%lld</string>
+	<key>Copy Remote Address</key>
+	<string>复制远程地址</string>
+	<key>Copy SSH Argument</key>
+	<string>复制 SSH 参数</string>
+	<key>Copy URL</key>
+	<string>复制 URL</string>
+	<key>Copy Unified API Key</key>
+	<string>复制统一 API 密钥</string>
+	<key>Copy Unified URL</key>
+	<string>复制统一 API URL</string>
+	<key>Copy model ID</key>
+	<string>复制模型 ID</string>
+	<key>Couldn’t Check for Updates</key>
+	<string>无法检查更新</string>
+	<key>Counts include requests whose upstream response contains usage data.</key>
+	<string>统计包含上游响应中带有用量数据的请求。</string>
+	<key>Create Anyway</key>
+	<string>仍要创建</string>
+	<key>Create Endpoint</key>
+	<string>创建端点</string>
+	<key>Create SSH Connection</key>
+	<string>创建 SSH 连接</string>
+	<key>Create an OpenSSH fixed or dynamic port forward.</key>
+	<string>创建 OpenSSH 固定或动态端口转发。</string>
+	<key>Creating…</key>
+	<string>正在创建…</string>
+	<key>Current API key</key>
+	<string>当前 API 密钥</string>
+	<key>Current Version</key>
+	<string>当前版本</string>
+	<key>Current selection is hidden by search</key>
+	<string>当前选择已被搜索隐藏</string>
+	<key>DGX Spark API</key>
+	<string>DGX Spark API</string>
+	<key>DeepSeek API key</key>
+	<string>DeepSeek API 密钥</string>
+	<key>Delete API Endpoint…</key>
+	<string>删除 API 端点…</string>
+	<key>Delete Connection</key>
+	<string>删除连接</string>
+	<key>Delete Endpoint</key>
+	<string>删除端点</string>
+	<key>Delete Key</key>
+	<string>删除密钥</string>
+	<key>Delete Key…</key>
+	<string>删除密钥…</string>
+	<key>Delete Other Service…</key>
+	<string>删除其他服务…</string>
+	<key>Delete SSH Connection…</key>
+	<string>删除 SSH 连接…</string>
+	<key>Delete this API key?</key>
+	<string>要删除此 API 密钥吗？</string>
+	<key>Delete this SSH connection?</key>
+	<string>要删除此 SSH 连接吗？</string>
+	<key>Diagnostic URL</key>
+	<string>诊断 URL</string>
+	<key>Diagnostics and Privacy</key>
+	<string>诊断与隐私</string>
+	<key>Direct Connection</key>
+	<string>直接连接</string>
+	<key>Direct HTTPS API</key>
+	<string>直接 HTTPS API</string>
+	<key>Disable Unified API</key>
+	<string>停用统一 API</string>
+	<key>Disabled</key>
+	<string>已停用</string>
+	<key>Disabling the listener keeps your model list for the next time you enable it.</key>
+	<string>停用监听器会保留模型列表，供下次启用时使用。</string>
+	<key>Discard Changes</key>
+	<string>放弃更改</string>
+	<key>Disconnect</key>
+	<string>断开连接</string>
+	<key>Disconnect All</key>
+	<string>全部断开</string>
+	<key>Disconnect Selected</key>
+	<string>断开所选项目</string>
+	<key>Disconnecting…</key>
+	<string>正在断开…</string>
+	<key>Discovered models</key>
+	<string>已发现模型</string>
+	<key>Dismiss</key>
+	<string>关闭</string>
+	<key>Download Update</key>
+	<string>下载更新</string>
+	<key>Download Update…</key>
+	<string>下载更新…</string>
+	<key>Duplicate</key>
+	<string>复制</string>
+	<key>Duplicate API Endpoint</key>
+	<string>复制 API 端点</string>
+	<key>Duplicate SSH Connection</key>
+	<string>复制 SSH 连接</string>
+	<key>Dynamic port forwarding (-D)</key>
+	<string>动态端口转发 (-D)</string>
+	<key>Each successful sign-in adds a separate credential to the account pool.</key>
+	<string>每次成功登录都会向账户池添加一份独立凭据。</string>
+	<key>Edit Port Forward…</key>
+	<string>编辑端口转发…</string>
+	<key>Edit port forward</key>
+	<string>编辑端口转发</string>
+	<key>Edit…</key>
+	<string>编辑…</string>
+	<key>Enable %@</key>
+	<string>启用 %@</string>
+	<key>Enable Unified API</key>
+	<string>启用统一 API</string>
+	<key>Enabled</key>
+	<string>已启用</string>
+	<key>Endpoint enabled</key>
+	<string>启用端点</string>
+	<key>Endpoint not found</key>
+	<string>未找到端点</string>
+	<key>Enter model ID manually</key>
+	<string>手动输入模型 ID</string>
+	<key>Expand Others</key>
+	<string>展开其他项目</string>
+	<key>Expose selected models through one authenticated local API.</key>
+	<string>通过一个经过身份验证的本地 API 提供所选模型。</string>
+	<key>Failure threshold</key>
+	<string>失败阈值</string>
+	<key>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</key>
+	<string>固定转发连接一个目标。动态转发在此 Mac (-D) 或 SSH 服务器 (-R) 上提供 SOCKS 4/5 代理。</string>
+	<key>Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.</key>
+	<string>为密钥指定客户端或设备名称。生成的值将存入钥匙串并复制到剪贴板。</string>
+	<key>HTTPS base URL</key>
+	<string>HTTPS 基础 URL</string>
+	<key>HTTPS origin</key>
+	<string>HTTPS 源站</string>
+	<key>Health path</key>
+	<string>健康检查路径</string>
+	<key>Host</key>
+	<string>主机</string>
+	<key>Idle</key>
+	<string>空闲</string>
+	<key>In progress</key>
+	<string>进行中</string>
+	<key>In use, saved in Keychain</key>
+	<string>正在使用，已存入钥匙串</string>
+	<key>Included models</key>
+	<string>包含的模型</string>
+	<key>Inspect the tokens reported by models served through the Unified API.</key>
+	<string>查看通过统一 API 提供的模型所报告的令牌用量。</string>
+	<key>Invalid endpoint URL</key>
+	<string>端点 URL 无效</string>
+	<key>Keepalive interval</key>
+	<string>保活间隔</string>
+	<key>Keychain Secrets</key>
+	<string>钥匙串机密</string>
+	<key>Last checked</key>
+	<string>上次检查</string>
+	<key>Last checked %@</key>
+	<string>上次检查：%@</string>
+	<key>Launch %@ at login</key>
+	<string>登录时启动 %@</string>
+	<key>Legacy Configuration</key>
+	<string>旧版配置</string>
+	<key>Listen port</key>
+	<string>监听端口</string>
+	<key>Loading ModelMoor configuration</key>
+	<string>正在加载 ModelMoor 配置</string>
+	<key>Loading ModelMoor…</key>
+	<string>正在加载 ModelMoor…</string>
+	<key>Local endpoint</key>
+	<string>本地端点</string>
+	<key>Local port forwarding (-L)</key>
+	<string>本地端口转发 (-L)</string>
+	<key>Login launch is disabled for development builds.</key>
+	<string>开发构建已停用登录时启动。</string>
+	<key>Loopback origin</key>
+	<string>回环源站</string>
+	<key>Manage %@</key>
+	<string>管理 %@</string>
+	<key>Manage Models…</key>
+	<string>管理模型…</string>
+	<key>Manage Subscription</key>
+	<string>管理订阅</string>
+	<key>Managed helper</key>
+	<string>托管辅助进程</string>
+	<key>Method</key>
+	<string>方式</string>
+	<key>Model</key>
+	<string>模型</string>
+	<key>Model list path</key>
+	<string>模型列表路径</string>
+	<key>Model usage</key>
+	<string>模型用量</string>
+	<key>ModelMoor %@ is available.</key>
+	<string>ModelMoor %@ 已可用。</string>
+	<key>ModelMoor %@ is available. You are currently using version %@.</key>
+	<string>ModelMoor %@ 已可用。你当前使用的是 %@ 版本。</string>
+	<key>ModelMoor Is Up to Date</key>
+	<string>ModelMoor 已是最新版本</string>
+	<key>ModelMoor creates a loopback port forward and keeps the SSH connection available in the background.</key>
+	<string>ModelMoor 会创建回环端口转发，并在后台保持 SSH 连接可用。</string>
+	<key>ModelMoor is up to date.</key>
+	<string>ModelMoor 已是最新版本。</string>
+	<key>ModelMoor records a bounded, redacted runtime history. API keys and inference content are never included.</key>
+	<string>ModelMoor 会记录有界且经过脱敏的运行历史，其中绝不包含 API 密钥或推理内容。</string>
+	<key>ModelMoor will remove the local OAuth credential for %@.</key>
+	<string>ModelMoor 将移除 %@ 的本地 OAuth 凭据。</string>
+	<key>Models</key>
+	<string>模型</string>
+	<key>Models from subscriptions</key>
+	<string>订阅中的模型</string>
+	<key>Models, %lld</key>
+	<string>模型，%lld 个</string>
+	<key>Models, %lld discovered</key>
+	<string>模型，已发现 %lld 个</string>
+	<key>Models, 1</key>
+	<string>模型，1 个</string>
+	<key>Models, 1 discovered</key>
+	<string>模型，已发现 1 个</string>
+	<key>More account actions</key>
+	<string>更多账户操作</string>
+	<key>More actions for %@</key>
+	<string>%@ 的更多操作</string>
+	<key>More key actions</key>
+	<string>更多密钥操作</string>
+	<key>Name</key>
+	<string>名称</string>
+	<key>Navigate</key>
+	<string>导航</string>
+	<key>Needs Attention</key>
+	<string>需要处理</string>
+	<key>Needs Attention, %lld</key>
+	<string>需要处理，%lld 项</string>
+	<key>Needs attention</key>
+	<string>需要处理</string>
+	<key>Needs attention, %@</key>
+	<string>需要处理：%@</string>
+	<key>New API Endpoint…</key>
+	<string>新建 API 端点…</string>
+	<key>New SSH Connection…</key>
+	<string>新建 SSH 连接…</string>
+	<key>New SSH connection</key>
+	<string>新建 SSH 连接</string>
+	<key>No API Endpoints</key>
+	<string>没有 API 端点</string>
+	<key>No API endpoints use this connection.</key>
+	<string>没有 API 端点使用此连接。</string>
+	<key>No API keys configured</key>
+	<string>尚未配置 API 密钥</string>
+	<key>No API keys saved. Add one to authenticate this endpoint.</key>
+	<string>尚未保存 API 密钥。请添加一个以验证此端点。</string>
+	<key>No SSH Connections</key>
+	<string>没有 SSH 连接</string>
+	<key>No accounts connected</key>
+	<string>尚未连接账户</string>
+	<key>No discovered models</key>
+	<string>没有发现模型</string>
+	<key>No matching connections or endpoints</key>
+	<string>没有匹配的连接或端点</string>
+	<key>No matching upstream response included token usage in this range.</key>
+	<string>此时间范围内没有匹配的上游响应包含令牌用量。</string>
+	<key>No model IDs are available yet.</key>
+	<string>尚无可用的模型 ID。</string>
+	<key>No new update was found last time.</key>
+	<string>上次检查未发现新版本。</string>
+	<key>No reported usage</key>
+	<string>没有已报告的用量</string>
+	<key>No unified models</key>
+	<string>没有统一模型</string>
+	<key>Not Now</key>
+	<string>稍后</string>
+	<key>Not accepted</key>
+	<string>未被接受</string>
+	<key>Not checked</key>
+	<string>尚未检查</string>
+	<key>OK</key>
+	<string>好</string>
+	<key>Off</key>
+	<string>关</string>
+	<key>On</key>
+	<string>开</string>
+	<key>One local URL for the models you choose.</key>
+	<string>用一个本地 URL 访问所选模型。</string>
+	<key>Only direct HTTPS API endpoints can be duplicated.</key>
+	<string>只能复制用户创建的直连 HTTPS API 端点。</string>
+	<key>Open %@</key>
+	<string>打开 %@</string>
+	<key>Open Folder</key>
+	<string>打开文件夹</string>
+	<key>Open Keychain Access</key>
+	<string>打开钥匙串访问</string>
+	<key>Open sign-in page</key>
+	<string>打开登录页面</string>
+	<key>Open the %@ folder in Finder</key>
+	<string>在访达中打开 %@ 文件夹</string>
+	<key>Opens API endpoint details</key>
+	<string>打开 API 端点详情</string>
+	<key>Others</key>
+	<string>其他</string>
+	<key>Overview</key>
+	<string>概览</string>
+	<key>Persistent Storage</key>
+	<string>持久化存储</string>
+	<key>Port</key>
+	<string>端口</string>
+	<key>Port Forwards</key>
+	<string>端口转发</string>
+	<key>Port forward type</key>
+	<string>端口转发类型</string>
+	<key>Preset</key>
+	<string>预设</string>
+	<key>Provider credentials are managed in Subscription.</key>
+	<string>提供商凭据在“订阅”中管理。</string>
+	<key>Public model</key>
+	<string>公开模型</string>
+	<key>Public model name “%@” is already in use.</key>
+	<string>公开模型名称“%@”已被使用。</string>
+	<key>Public name</key>
+	<string>公开名称</string>
+	<key>Quit %@</key>
+	<string>退出 %@</string>
+	<key>Ready</key>
+	<string>就绪</string>
+	<key>Ready endpoints</key>
+	<string>就绪端点</string>
+	<key>Ready, %lld model</key>
+	<string>就绪，%lld 个模型</string>
+	<key>Ready, %lld models</key>
+	<string>就绪，%lld 个模型</string>
+	<key>Ready, 127.0.0.1:%lld, %lld models</key>
+	<string>已就绪，127.0.0.1:%lld，%lld 个模型</string>
+	<key>Reconnect automatically</key>
+	<string>自动重新连接</string>
+	<key>Refresh</key>
+	<string>刷新</string>
+	<key>Refresh Status</key>
+	<string>刷新状态</string>
+	<key>Refresh all endpoint status</key>
+	<string>刷新所有端点状态</string>
+	<key>Refresh the endpoint or enter an upstream model ID manually.</key>
+	<string>刷新端点或手动输入上游模型 ID。</string>
+	<key>Refresh the panel to try loading it again.</key>
+	<string>刷新面板以再次尝试加载。</string>
+	<key>Refreshing Status…</key>
+	<string>正在刷新状态…</string>
+	<key>Refreshing endpoint status</key>
+	<string>正在刷新端点状态</string>
+	<key>Refreshing usage</key>
+	<string>正在刷新用量</string>
+	<key>Refreshing…</key>
+	<string>正在刷新…</string>
+	<key>Reload SSH configuration</key>
+	<string>重新加载 SSH 配置</string>
+	<key>Reload ~/.ssh/config</key>
+	<string>重新加载 ~/.ssh/config</string>
+	<key>Remote API</key>
+	<string>远程 API</string>
+	<key>Remote API port</key>
+	<string>远程 API 端口</string>
+	<key>Remote over SSH</key>
+	<string>通过 SSH 访问远程服务</string>
+	<key>Remote port forwarding (-R)</key>
+	<string>远程端口转发 (-R)</string>
+	<key>Remove %@</key>
+	<string>移除 %@</string>
+	<key>Remove %@ from Unified API</key>
+	<string>从统一 API 中移除 %@</string>
+	<key>Remove %@ port forward</key>
+	<string>移除 %@ 端口转发</string>
+	<key>Remove Account</key>
+	<string>移除账户</string>
+	<key>Remove Account…</key>
+	<string>移除账户…</string>
+	<key>Remove Key…</key>
+	<string>移除密钥…</string>
+	<key>Remove model from Unified API</key>
+	<string>从统一 API 中移除模型</string>
+	<key>Remove port forward</key>
+	<string>移除端口转发</string>
+	<key>Remove the API endpoint before removing its port forward</key>
+	<string>请先移除 API 端点，再移除其端口转发</string>
+	<key>Remove this API key?</key>
+	<string>要移除此 API 密钥吗？</string>
+	<key>Remove this subscription account?</key>
+	<string>要移除此订阅账户吗？</string>
+	<key>Replace Key…</key>
+	<string>替换密钥…</string>
+	<key>Require API key</key>
+	<string>要求 API 密钥</string>
+	<key>Restore Defaults</key>
+	<string>恢复默认值</string>
+	<key>Retained as an unchanged migration source for older ModelMoor versions.</key>
+	<string>作为旧版 ModelMoor 的迁移来源原样保留。</string>
+	<key>Retry</key>
+	<string>重试</string>
+	<key>Retry Test</key>
+	<string>重试测试</string>
+	<key>Reverse dynamic port forwarding (-R)</key>
+	<string>反向动态端口转发 (-R)</string>
+	<key>Revert</key>
+	<string>还原</string>
+	<key>Rotate Key</key>
+	<string>轮换密钥</string>
+	<key>Rotate Key…</key>
+	<string>轮换密钥…</string>
+	<key>Rotate this API key?</key>
+	<string>要轮换此 API 密钥吗？</string>
+	<key>Run Diagnostics</key>
+	<string>运行诊断</string>
+	<key>Run a read-only model-list request before creating this endpoint.</key>
+	<string>创建此端点前，先发送只读的模型列表请求。</string>
+	<key>Run diagnostics</key>
+	<string>运行诊断</string>
+	<key>SSH Connection</key>
+	<string>SSH 连接</string>
+	<key>SSH Connections</key>
+	<string>SSH 连接</string>
+	<key>SSH alias</key>
+	<string>SSH 别名</string>
+	<key>SSH alias %@, %lld active forwards</key>
+	<string>SSH 别名 %1$@，%2$lld 个活跃转发</string>
+	<key>SSH connection not found</key>
+	<string>未找到 SSH 连接</string>
+	<key>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</key>
+	<string>SSH 连接、端点、路由和网关设置；架构备份保存在同一文件夹中。</string>
+	<key>Save Port Forward</key>
+	<string>保存端口转发</string>
+	<key>Saved in Keychain</key>
+	<string>已存入钥匙串</string>
+	<key>Search Sidebar</key>
+	<string>搜索侧边栏</string>
+	<key>Search connections and endpoints</key>
+	<string>搜索连接和端点</string>
+	<key>Selected time</key>
+	<string>所选时间</string>
+	<key>Selected tokens</key>
+	<string>所选令牌数</string>
+	<key>Set Key…</key>
+	<string>设置密钥…</string>
+	<key>Settings</key>
+	<string>设置</string>
+	<key>Settings…</key>
+	<string>设置…</string>
+	<key>Show SSH Connection</key>
+	<string>显示 SSH 连接</string>
+	<key>Show Unified API</key>
+	<string>显示统一 API</string>
+	<key>Show in ModelMoor</key>
+	<string>在 ModelMoor 中显示</string>
+	<key>Show or Hide Sidebar</key>
+	<string>显示或隐藏边栏</string>
+	<key>Show or hide sidebar</key>
+	<string>显示或隐藏边栏</string>
+	<key>Show or hide the sidebar</key>
+	<string>显示或隐藏边栏</string>
+	<key>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth refresh credentials are stored in ModelMoor's private application-data directory because the bundled helper requires file-backed credentials.</key>
+	<string>登录在提供商的网站上完成，ModelMoor 不会接收你的密码。由于内置辅助程序需要基于文件的凭据，OAuth 刷新凭据会存储在 ModelMoor 的私有应用数据目录中。</string>
+	<key>Software Updates</key>
+	<string>软件更新</string>
+	<key>Source</key>
+	<string>来源</string>
+	<key>Source endpoint</key>
+	<string>源端点</string>
+	<key>Spark dashboard</key>
+	<string>Spark 仪表盘</string>
+	<key>Starting</key>
+	<string>正在启动</string>
+	<key>Starting, %lld models</key>
+	<string>正在启动，%lld 个模型</string>
+	<key>Startup</key>
+	<string>启动</string>
+	<key>Status</key>
+	<string>状态</string>
+	<key>Step %lld of 3</key>
+	<string>第 %lld 步，共 3 步</string>
+	<key>Subscription</key>
+	<string>订阅</string>
+	<key>Subscription Data</key>
+	<string>订阅数据</string>
+	<key>Test Endpoint</key>
+	<string>测试端点</string>
+	<key>Test URL</key>
+	<string>测试 URL</string>
+	<key>Test and create</key>
+	<string>测试并创建</string>
+	<key>The SSH port forward is missing</key>
+	<string>缺少 SSH 端口转发</string>
+	<key>The internal loopback key is generated from Keychain into the helper's private configuration.</key>
+	<string>内部回环密钥由钥匙串生成到辅助程序的私有配置中。</string>
+	<key>The key is stored in Keychain and is never written to ModelMoor configuration.</key>
+	<string>密钥存储在钥匙串中，绝不会写入 ModelMoor 配置。</string>
+	<key>The key is stored in Keychain and is never written to the ModelMoor configuration file.</key>
+	<string>密钥存储在钥匙串中，绝不会写入 ModelMoor 配置文件。</string>
+	<key>The key named %@ will be removed from Keychain.</key>
+	<string>名为 %@ 的密钥将从钥匙串中移除。</string>
+	<key>The listener stays on loopback, so the forwarded port is not exposed to the LAN.</key>
+	<string>监听器仅绑定回环地址，因此转发端口不会暴露给局域网。</string>
+	<key>The local port is allocated automatically and remains loopback-only.</key>
+	<string>本地端口会自动分配，并且仅限回环访问。</string>
+	<key>The previous Gateway Token is the default Unified API key.</key>
+	<string>原有的网关令牌将作为默认的统一 API 密钥。</string>
+	<key>This API endpoint</key>
+	<string>此 API 端点</string>
+	<key>This SSH connection</key>
+	<string>此 SSH 连接</string>
+	<key>This SSH connection has unapplied changes.</key>
+	<string>此 SSH 连接有尚未应用的更改。</string>
+	<key>This endpoint has unapplied changes.</key>
+	<string>此端点有尚未应用的更改。</string>
+	<key>This forward belongs to an API endpoint, so it must remain a local -L forward.</key>
+	<string>此转发属于一个 API 端点，因此必须保持为本地 -L 转发。</string>
+	<key>Time</key>
+	<string>时间</string>
+	<key>Time range</key>
+	<string>时间范围</string>
+	<key>Token counts and internal route identifiers; request and response content is not stored.</key>
+	<string>仅保存令牌计数和内部路由标识符，不保存请求或响应内容。</string>
+	<key>Token trend</key>
+	<string>令牌趋势</string>
+	<key>Token usage over %@</key>
+	<string>%@内的令牌用量</string>
+	<key>Tokens</key>
+	<string>令牌数</string>
+	<key>Type</key>
+	<string>类型</string>
+	<key>Unified API</key>
+	<string>统一 API</string>
+	<key>Unified API gives local clients a stable OpenAI-compatible endpoint while ModelMoor routes each public model name to its source API.</key>
+	<string>统一 API 为本地客户端提供稳定且兼容 OpenAI 的端点，同时由 ModelMoor 将每个公开模型名称路由到其源 API。</string>
+	<key>Update checks are disabled for development builds.</key>
+	<string>开发构建已停用更新检查。</string>
+	<key>Update to %@…</key>
+	<string>更新到 %@…</string>
+	<key>Updates have not been checked yet.</key>
+	<string>尚未检查更新。</string>
+	<key>Updating %@</key>
+	<string>正在更新 %@</string>
+	<key>Upstream model</key>
+	<string>上游模型</string>
+	<key>Upstream-reported tokens</key>
+	<string>上游报告的令牌数</string>
+	<key>Usage</key>
+	<string>用量</string>
+	<key>Usage History</key>
+	<string>用量历史</string>
+	<key>Usage and Settings</key>
+	<string>用量与设置</string>
+	<key>Usage by model</key>
+	<string>按模型统计用量</string>
+	<key>Usage history stores timestamps, token totals, and internal route and endpoint identifiers. Prompts, responses, model names, headers, and API keys are not stored. Streaming requests appear only when the upstream sends usage data.</key>
+	<string>用量历史仅存储时间戳、令牌总数以及内部路由和端点标识符，不会存储提示词、响应、模型名称、请求头或 API 密钥。流式请求仅在上游返回用量数据时显示。</string>
+	<key>Usage history unavailable</key>
+	<string>用量历史不可用</string>
+	<key>Use %@</key>
+	<string>使用 %@</string>
+	<key>Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.</key>
+	<string>使用此 Mac 可直接访问的商业或自托管 HTTPS 端点。</string>
+	<key>Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.</key>
+	<string>通过 SSH 使用远程模型，或连接直连 HTTPS API。ModelMoor 会将传输细节与日常工作流分离。</string>
+	<key>Use for routing</key>
+	<string>用于路由</string>
+	<key>Used By</key>
+	<string>使用方</string>
+	<key>Used by %@</key>
+	<string>由 %@ 使用</string>
+	<key>Version %@ is the newest version available.</key>
+	<string>%@ 是当前可用的最新版本。</string>
+	<key>Via</key>
+	<string>经由</string>
+	<key>View Release</key>
+	<string>查看发布页面</string>
+	<key>View Release…</key>
+	<string>查看版本…</string>
+	<key>Waiting for %@ sign-in</key>
+	<string>正在等待 %@ 登录</string>
+	<key>Waiting for sign-in</key>
+	<string>正在等待登录</string>
+	<key>Where is the API running?</key>
+	<string>API 在哪里运行？</string>
+	<key>Window and update preferences. Login launch is managed separately by macOS.</key>
+	<string>窗口和更新偏好设置；登录时启动由 macOS 单独管理。</string>
+	<key>Your local model endpoints</key>
+	<string>本地模型端点</string>
+</dict>
+</plist>
