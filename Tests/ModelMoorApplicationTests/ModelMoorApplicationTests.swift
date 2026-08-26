@@ -360,6 +360,41 @@ final class ModelMoorApplicationTests: XCTestCase {
         XCTAssertEqual(latest?.configuration.endpoints[0].name, "Update 3")
     }
 
+    func testManagedSubscriptionCommandsWaitForSnapshotDelivery() async throws {
+        let delivery = ManagedSubscriptionDeliveryProbe()
+        let runtimeProbe = FakeCLIProxyRuntimeProbe()
+        let managementState = FakeCLIProxyManagementState()
+        let coordinator = ManagedSubscriptionCoordinator(
+            dataDirectoryURL: FileManager.default.temporaryDirectory,
+            secretStore: UnavailableSecretStore(reason: "unused by shutdown"),
+            diagnostics: DiagnosticLog(),
+            serviceFactory: { _, handler in
+                FakeCLIProxyService(probe: runtimeProbe, stateHandler: handler)
+            },
+            managementFactory: { _, _ in
+                FakeCLIProxyManagementClient(state: managementState)
+            },
+            usageProvider: FakeSubscriptionUsageProvider()
+        ) { _ in
+            await delivery.receiveSnapshot()
+        }
+
+        let command = Task {
+            await coordinator.shutdown()
+            await delivery.markCommandCompleted()
+        }
+        await delivery.waitUntilSnapshotDeliveryStarts()
+        try await Task.sleep(for: .milliseconds(50))
+
+        let completedBeforeDelivery = await delivery.commandCompleted
+        XCTAssertFalse(completedBeforeDelivery)
+
+        await delivery.releaseSnapshotDelivery()
+        await command.value
+        let completedAfterDelivery = await delivery.commandCompleted
+        XCTAssertTrue(completedAfterDelivery)
+    }
+
     func testManagedSubscriptionLifecycleAndCommandsAreSessionOwned() async throws {
         let runtimeProbe = FakeCLIProxyRuntimeProbe()
         let managementState = FakeCLIProxyManagementState()
@@ -786,6 +821,38 @@ private struct FakeSubscriptionUsageProvider: SubscriptionUsageProviding {
         accounts.map {
             SubscriptionUsageSnapshot(id: $0.id, accountEmail: $0.email, source: "test")
         }
+    }
+}
+
+private actor ManagedSubscriptionDeliveryProbe {
+    private var snapshotDeliveryStarted = false
+    private var snapshotDeliveryStartWaiter: CheckedContinuation<Void, Never>?
+    private var snapshotDeliveryReleaseWaiter: CheckedContinuation<Void, Never>?
+    private(set) var commandCompleted = false
+
+    func receiveSnapshot() async {
+        snapshotDeliveryStarted = true
+        snapshotDeliveryStartWaiter?.resume()
+        snapshotDeliveryStartWaiter = nil
+        await withCheckedContinuation { continuation in
+            snapshotDeliveryReleaseWaiter = continuation
+        }
+    }
+
+    func waitUntilSnapshotDeliveryStarts() async {
+        guard !snapshotDeliveryStarted else { return }
+        await withCheckedContinuation { continuation in
+            snapshotDeliveryStartWaiter = continuation
+        }
+    }
+
+    func releaseSnapshotDelivery() {
+        snapshotDeliveryReleaseWaiter?.resume()
+        snapshotDeliveryReleaseWaiter = nil
+    }
+
+    func markCommandCompleted() {
+        commandCompleted = true
     }
 }
 

@@ -46,7 +46,9 @@ jobs:
   linux:
     name: Build Linux release (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    container: swift:6.1-noble
+    # Build on the oldest supported Ubuntu ABI so one archive runs on both
+    # Ubuntu 22.04 and 24.04. The Swift runtime itself is linked statically.
+    container: swift:6.1-jammy
     strategy:
       fail-fast: false
       matrix:
@@ -88,10 +90,10 @@ jobs:
         run: swift test --package-path Apps/TUI
 
       - name: Build release CLI
-        run: swift build -c release --product modelmoor
+        run: swift build -c release --static-swift-stdlib --product modelmoor
 
       - name: Build release TUI
-        run: swift build -c release --package-path Apps/TUI
+        run: swift build -c release --static-swift-stdlib --package-path Apps/TUI
 
       - name: Run default CLI TUI terminal smoke test
         run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --show-bin-path)/modelmoor"
@@ -108,6 +110,12 @@ jobs:
         run: |
           test "$(uname -m)" = "$EXPECTED_ARCH"
           file "$(swift build -c release --show-bin-path)/modelmoor" \
+            "$(swift build -c release --package-path Apps/TUI --show-bin-path)/modelmoor-tui"
+
+      - name: Verify release runtime dependencies
+        run: |
+          ./Scripts/check-linux-release-dependencies.sh \
+            "$(swift build -c release --show-bin-path)/modelmoor" \
             "$(swift build -c release --package-path Apps/TUI --show-bin-path)/modelmoor-tui"
 
       - name: Package release archive

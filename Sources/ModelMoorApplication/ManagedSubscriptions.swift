@@ -67,7 +67,7 @@ public enum ManagedSubscriptionInteractionPolicy {
     }
 }
 
-fileprivate struct ManagedSubscriptionUpdate: Sendable {
+struct ManagedSubscriptionUpdate: Sendable {
     let coordinatorID: UUID
     let revision: UInt64
     let snapshot: ManagedSubscriptionSnapshot
@@ -87,7 +87,7 @@ actor ManagedSubscriptionCoordinator {
     private let serviceFactory: CLIProxyServiceFactory
     private let managementFactory: CLIProxyManagementFactory
     private let usageProvider: any SubscriptionUsageProviding
-    private let snapshotHandler: @Sendable (ManagedSubscriptionUpdate) -> Void
+    private let snapshotHandler: @Sendable (ManagedSubscriptionUpdate) async -> Void
 
     private var configuration: CLIProxyConfiguration?
     private var service: (any CLIProxyServicing)?
@@ -98,14 +98,14 @@ actor ManagedSubscriptionCoordinator {
     private var suspended = false
     private var snapshotRevision: UInt64 = 0
 
-    fileprivate init(
+    init(
         dataDirectoryURL: URL,
         secretStore: any ModelMoorSecretStore,
         diagnostics: DiagnosticLog,
         serviceFactory: @escaping CLIProxyServiceFactory,
         managementFactory: @escaping CLIProxyManagementFactory,
         usageProvider: any SubscriptionUsageProviding,
-        snapshotHandler: @escaping @Sendable (ManagedSubscriptionUpdate) -> Void
+        snapshotHandler: @escaping @Sendable (ManagedSubscriptionUpdate) async -> Void
     ) {
         self.dataDirectoryURL = dataDirectoryURL
         self.secretStore = secretStore
@@ -151,12 +151,12 @@ actor ManagedSubscriptionCoordinator {
             )
             snapshot.runtimeState = await service.state
             snapshot.errorMessage = nil
-            publish()
+            await publish()
             try? await refreshAccounts(reportErrors: false)
         } catch {
             snapshot.runtimeState = .failed(error.localizedDescription)
             snapshot.errorMessage = error.localizedDescription
-            publish()
+            await publish()
             await diagnostics.append(
                 subject: .gateway,
                 severity: .error,
@@ -199,7 +199,7 @@ actor ManagedSubscriptionCoordinator {
             snapshot.activeProvider = provider
             snapshot.activeLogin = login
             snapshot.errorMessage = nil
-            publish()
+            await publish()
             loginTask = Task { [weak self] in
                 await self?.pollLogin(state: login.state)
             }
@@ -208,7 +208,7 @@ actor ManagedSubscriptionCoordinator {
             snapshot.activeProvider = nil
             snapshot.activeLogin = nil
             snapshot.errorMessage = error.localizedDescription
-            publish()
+            await publish()
             throw error
         }
     }
@@ -222,32 +222,32 @@ actor ManagedSubscriptionCoordinator {
         }
         snapshot.activeProvider = nil
         snapshot.activeLogin = nil
-        publish()
+        await publish()
     }
 
     func refreshAccounts(reportErrors: Bool = true) async throws {
         guard configuration?.enabled == true else {
             snapshot.accounts = []
             snapshot.usage = [:]
-            publish()
+            await publish()
             return
         }
         guard !snapshot.isRefreshingAccounts else { return }
         snapshot.isRefreshingAccounts = true
-        publish()
-        defer {
-            snapshot.isRefreshingAccounts = false
-            publish()
-        }
+        await publish()
         do {
             snapshot.accounts = try await managementClient().accounts()
             if reportErrors { snapshot.errorMessage = nil }
         } catch {
             if reportErrors {
                 snapshot.errorMessage = error.localizedDescription
+                snapshot.isRefreshingAccounts = false
+                await publish()
                 throw error
             }
         }
+        snapshot.isRefreshingAccounts = false
+        await publish()
     }
 
     func refreshUsage() async {
@@ -255,15 +255,15 @@ actor ManagedSubscriptionCoordinator {
         let accounts = snapshot.accounts.filter { $0.provider.lowercased() == "codex" }
         guard !accounts.isEmpty, usageProvider.isAvailable else {
             snapshot.usage = [:]
-            publish()
+            await publish()
             return
         }
         snapshot.isRefreshingUsage = true
-        publish()
+        await publish()
         let values = await usageProvider.usage(for: accounts)
         snapshot.usage = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0) })
         snapshot.isRefreshingUsage = false
-        publish()
+        await publish()
     }
 
     func removeAccount(_ account: CLIProxyAccount) async throws {
@@ -271,10 +271,10 @@ actor ManagedSubscriptionCoordinator {
             try await managementClient().deleteAccount(named: account.name)
             try await refreshAccounts()
             snapshot.errorMessage = nil
-            publish()
+            await publish()
         } catch {
             snapshot.errorMessage = error.localizedDescription
-            publish()
+            await publish()
             throw error
         }
     }
@@ -282,19 +282,19 @@ actor ManagedSubscriptionCoordinator {
     func setAccountEnabled(_ account: CLIProxyAccount, enabled: Bool) async throws {
         guard !snapshot.updatingAccountIDs.contains(account.id) else { return }
         snapshot.updatingAccountIDs.insert(account.id)
-        publish()
-        defer {
-            snapshot.updatingAccountIDs.remove(account.id)
-            publish()
-        }
+        await publish()
         do {
             try await managementClient().setAccountDisabled(account, disabled: !enabled)
             try await refreshAccounts()
             snapshot.errorMessage = nil
         } catch {
             snapshot.errorMessage = error.localizedDescription
+            snapshot.updatingAccountIDs.remove(account.id)
+            await publish()
             throw error
         }
+        snapshot.updatingAccountIDs.remove(account.id)
+        await publish()
     }
 
     private func stop(clearAccounts: Bool) async {
@@ -315,7 +315,7 @@ actor ManagedSubscriptionCoordinator {
             snapshot.accounts = []
             snapshot.usage = [:]
         }
-        publish()
+        await publish()
     }
 
     private func managementClient() throws -> any CLIProxyManaging {
@@ -344,7 +344,7 @@ actor ManagedSubscriptionCoordinator {
                     loginTask = nil
                     try await refreshAccounts()
                     snapshot.errorMessage = nil
-                    publish()
+                    await publish()
                     return
                 case "error":
                     throw ManagedSubscriptionError.loginFailed(
@@ -362,11 +362,11 @@ actor ManagedSubscriptionCoordinator {
             snapshot.activeProvider = nil
             loginTask = nil
             snapshot.errorMessage = error.localizedDescription
-            publish()
+            await publish()
         }
     }
 
-    private func serviceStateChanged(_ state: CLIProxyRuntimeState) {
+    private func serviceStateChanged(_ state: CLIProxyRuntimeState) async {
         // State callbacks cross actors through Tasks and can therefore arrive
         // after a newer lifecycle command. Reject stale start/stop callbacks
         // using the coordinator's desired state before publishing them.
@@ -393,7 +393,7 @@ actor ManagedSubscriptionCoordinator {
             break
         }
         snapshot.runtimeState = state
-        publish()
+        await publish()
         switch state {
         case .running:
             restartTask?.cancel()
@@ -450,9 +450,13 @@ actor ManagedSubscriptionCoordinator {
         await reconcile(configuration: configuration, suspended: false)
     }
 
-    private func publish() {
+    private func publish() async {
         snapshotRevision &+= 1
-        snapshotHandler(currentUpdate)
+        // This await is the lifecycle completion barrier: a coordinator
+        // command must not return before ModelMoorSession consumes its state.
+        // Wrapping the handler in an unstructured Task reintroduces stale
+        // snapshots after commands such as suspendRuntime().
+        await snapshotHandler(currentUpdate)
     }
 }
 
@@ -487,14 +491,12 @@ extension ModelMoorSession {
         }
         let coordinator = subscriptionCoordinator()
         let login = try await coordinator.startLogin(provider)
-        await synchronizeManagedSubscriptions(from: coordinator)
         return login
     }
 
     public func cancelSubscriptionLogin() async {
         guard let coordinator = managedSubscriptionCoordinator else { return }
         await coordinator.cancelLogin()
-        await synchronizeManagedSubscriptions(from: coordinator)
     }
 
     public func refreshSubscriptionAccounts() async throws {
@@ -504,7 +506,6 @@ extension ModelMoorSession {
         guard snapshot.configuration.cliProxy.enabled else { return }
         let coordinator = subscriptionCoordinator()
         try await coordinator.refreshAccounts()
-        await synchronizeManagedSubscriptions(from: coordinator)
     }
 
     public func refreshSubscriptionState() async throws {
@@ -519,7 +520,6 @@ extension ModelMoorSession {
         guard snapshot.configuration.cliProxy.enabled else { return }
         let coordinator = subscriptionCoordinator()
         await coordinator.refreshUsage()
-        await synchronizeManagedSubscriptions(from: coordinator)
     }
 
     public func removeSubscriptionAccount(_ account: CLIProxyAccount) async throws {
@@ -528,7 +528,6 @@ extension ModelMoorSession {
         }
         let coordinator = subscriptionCoordinator()
         try await coordinator.removeAccount(account)
-        await synchronizeManagedSubscriptions(from: coordinator)
     }
 
     public func setSubscriptionAccountEnabled(
@@ -540,7 +539,6 @@ extension ModelMoorSession {
         }
         let coordinator = subscriptionCoordinator()
         try await coordinator.setAccountEnabled(account, enabled: enabled)
-        await synchronizeManagedSubscriptions(from: coordinator)
     }
 
     func reconcileManagedSubscriptions() async {
@@ -565,7 +563,6 @@ extension ModelMoorSession {
             configuration: snapshot.configuration.cliProxy,
             suspended: isRuntimeSuspended()
         )
-        await synchronizeManagedSubscriptions(from: coordinator)
     }
 
     private func subscriptionCoordinator() -> ManagedSubscriptionCoordinator {
@@ -578,18 +575,12 @@ extension ModelMoorSession {
             managementFactory: cliProxyManagementFactory,
             usageProvider: subscriptionUsageProvider
         ) { [weak self] update in
-            Task { await self?.applyManagedSubscriptionUpdate(update) }
+            await self?.applyManagedSubscriptionUpdate(update)
         }
         managedSubscriptionCoordinator = coordinator
         managedSubscriptionCoordinatorID = coordinator.id
         managedSubscriptionSnapshotRevision = 0
         return coordinator
-    }
-
-    private func synchronizeManagedSubscriptions(
-        from coordinator: ManagedSubscriptionCoordinator
-    ) async {
-        await applyManagedSubscriptionUpdate(coordinator.currentUpdate)
     }
 
     private func applyManagedSubscriptionUpdate(

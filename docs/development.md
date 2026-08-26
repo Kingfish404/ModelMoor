@@ -175,6 +175,8 @@ Pushing a version tag matching `v*` runs the release workflow on native Ubuntu x
 - `ModelMoor-vX.Y.Z-linux-x86_64.tar.gz`
 - `ModelMoor-vX.Y.Z-linux-aarch64.tar.gz`
 
+Linux release executables are built on the Ubuntu 22.04 ABI baseline with `--static-swift-stdlib`, so the same archive runs on Ubuntu 22.04 and 24.04 without installing a Swift toolchain or copying `libswift*.so`, Foundation, Dispatch, or BlocksRuntime libraries beside the executables. The executables still dynamically link system libraries (including glibc, libcurl, and its TLS dependencies); release CI rejects missing dependencies and any accidental Swift runtime `.so` dependency with `Scripts/check-linux-release-dependencies.sh`.
+
 The macOS archive is built in parallel; a final publish job creates one GitHub Release only after all three platform archives are available.
 
 ## Testing
