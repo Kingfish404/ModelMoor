@@ -148,6 +148,29 @@ final class ModelMoorApplicationTests: XCTestCase {
         XCTAssertFalse(snapshot.configuration.endpoints.contains(where: { $0.id == endpoint.id }))
     }
 
+    func testAddingEndpointWithSecretMarksDefaultAPIKeyAvailable() async throws {
+        let (session, directory) = try makeSession()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await session.load()
+
+        let endpoint = APIEndpointConfiguration(
+            name: "Cloud",
+            source: .directHTTPS(originURL: URL(string: "https://api.example.com")!),
+            authentication: .bearer
+        )
+        try await session.addEndpoint(endpoint, secret: "sk-test")
+
+        let keyID = try XCTUnwrap(endpoint.activeAPIKeyID)
+        let secretStore = HeadlessFileSecretStore(
+            fileURL: directory.appendingPathComponent("secrets.json")
+        )
+        XCTAssertEqual(try secretStore.token(for: keyID), "sk-test")
+        let snapshot = await session.snapshot
+        XCTAssertTrue(snapshot.availableEndpointAPIKeyIDs.contains(keyID))
+        let keyIsAvailable = await session.hasToken(forAPIKey: keyID)
+        XCTAssertTrue(keyIsAvailable)
+    }
+
     func testGatewayStartsAndStopsWithRuntime() async throws {
         let coordinator = GatewayServiceCoordinator {
             GatewayService(upstreamCancellationObserver: nil, bindingPortOverride: 0)

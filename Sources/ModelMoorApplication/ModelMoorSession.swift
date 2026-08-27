@@ -287,6 +287,16 @@ public actor ModelMoorSession {
             to: snapshot.configuration
         )
         snapshot.configuration = updated
+        if let keyID = endpoint.activeAPIKeyID {
+            let hasStoredSecret = secret?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .isEmpty == false
+            if hasStoredSecret {
+                snapshot.availableEndpointAPIKeyIDs.insert(keyID)
+            } else {
+                snapshot.availableEndpointAPIKeyIDs.remove(keyID)
+            }
+        }
         emit()
         await reconcileGateway()
     }
