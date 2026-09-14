@@ -96,9 +96,14 @@ else
   print "Signing with $SIGN_IDENTITY"
 fi
 
-codesign --force --sign "$SIGN_IDENTITY" "$CLI_BINARY"
-codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR/Contents/MacOS/CLIProxyAPI"
-codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR"
+# The standalone CLI and bundled helper do not need the app identity. Sign
+# them ad-hoc first, then use the Keychain-backed identity exactly once for the
+# outer app. Even when the user chooses one-time Allow instead of Always Allow,
+# one install can therefore produce at most one private-key password prompt.
+codesign --force --sign - \
+  "$CLI_BINARY" \
+  "$APP_DIR/Contents/MacOS/CLIProxyAPI"
+codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"
 
 print "Built $BUILD_PROFILE app: $APP_DIR"
 print "CLI: $CLI_BINARY"

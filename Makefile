@@ -26,7 +26,7 @@ BUILD_OPTIONS := --disable-sandbox --cache-path $(CACHE_DIR)
 
 .DEFAULT_GOAL := help
 
-.PHONY: help build app app-dev cli tui debug run run-dev run-release run-cli run-tui test test-root test-app test-tui test-cli-signal test-cli-tui-terminal test-tui-terminal test-all architecture-check localization-check install clean
+.PHONY: help build app app-dev cli tui debug run run-dev run-release run-cli run-tui test test-root test-app test-tui test-cli-signal test-cli-tui-terminal test-tui-terminal test-all architecture-check signing-policy-check localization-check install clean
 
 help: ## Show available build commands
 	@printf "Build:\n"
@@ -34,7 +34,7 @@ help: ## Show available build commands
 	@printf "\nRun:\n"
 	@$(MAKE) --no-print-directory help-group TARGETS="run run-dev run-release run-cli run-tui"
 	@printf "\nTest and validation:\n"
-	@$(MAKE) --no-print-directory help-group TARGETS="test test-root test-app test-tui test-cli-signal test-cli-tui-terminal test-tui-terminal test-all architecture-check localization-check"
+	@$(MAKE) --no-print-directory help-group TARGETS="test test-root test-app test-tui test-cli-signal test-cli-tui-terminal test-tui-terminal test-all architecture-check signing-policy-check localization-check"
 	@printf "\nInstall and maintenance:\n"
 	@$(MAKE) --no-print-directory help-group TARGETS="install clean"
 
@@ -61,11 +61,14 @@ tui: ## Build the standalone release TUI compatibility executable
 debug: ## Build the debug binaries
 	swift build $(BUILD_OPTIONS)
 
-test: architecture-check ## Run architecture checks and the root test suite
+test: architecture-check signing-policy-check ## Run architecture/signing checks and the root test suite
 	swift test $(BUILD_OPTIONS)
 
 architecture-check: ## Reject cross-layer platform/UI/terminal imports
 	./Scripts/check-layering.sh
+
+signing-policy-check: ## Limit app builds to one Keychain private-key use
+	./Scripts/check-signing-policy.sh
 
 localization-check: ## Verify catalog parity and compiler-extracted GUI key coverage
 	./Scripts/sync-localizations.sh --check
