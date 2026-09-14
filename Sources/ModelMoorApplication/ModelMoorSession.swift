@@ -60,6 +60,7 @@ public actor ModelMoorSession {
 
     private var tunnelService: TunnelService?
     private var gatewayCoordinator: GatewayServiceCoordinator?
+    private var budgetLedger: GatewayBudgetLedger?
     private var ownership: RuntimeOwnership?
     private var networkMonitor: NetworkMonitor?
     private var networkAvailable = true
@@ -936,7 +937,8 @@ public actor ModelMoorSession {
         if let gatewayCoordinator { return gatewayCoordinator }
         let usageStore = self.usageStore
         let diagnostics = self.diagnostics
-        let coordinator = GatewayServiceCoordinator { usage in
+        let ledger = currentBudgetLedger()
+        let coordinator = GatewayServiceCoordinator(budgetLedger: ledger) { usage in
             Task {
                 do {
                     try await usageStore.appendUsage(
@@ -956,6 +958,19 @@ public actor ModelMoorSession {
         }
         gatewayCoordinator = coordinator
         return coordinator
+    }
+
+    public func modelBudgetUsage(for routes: [ModelRouteConfiguration]) -> [UUID: [GatewayBudgetPeriodUsage]] {
+        let ledger = currentBudgetLedger()
+        let now = Date()
+        return Dictionary(uniqueKeysWithValues: routes.map { ($0.id, ledger.usage(for: $0, now: now)) })
+    }
+
+    private func currentBudgetLedger() -> GatewayBudgetLedger {
+        if let budgetLedger { return budgetLedger }
+        let ledger = GatewayBudgetLedger(fileURL: profile.tokenUsageURL.deletingLastPathComponent().appendingPathComponent("model-budgets.json"))
+        budgetLedger = ledger
+        return ledger
     }
 
     private func startNetworkMonitoring() {

@@ -8,6 +8,16 @@ ModelMoor is a native macOS menu bar app and CLI for moving OpenAI-compatible AP
 
 ## Three core workflows
 
+### Per-model budgets
+
+In Unified API, use the sliders button next to a model to set independent daily, weekly and monthly token and USD amount limits. Every limit is off by default; enabled limits can be edited or disabled independently. Amount limits require explicit input and output prices in USD per million tokens (zero is valid for free models).
+
+Budgets use UTC calendar days, ISO weeks starting Monday, and calendar months. Any reached limit pauses the public model: inference returns HTTP 429 with `error.code: insufficient_quota`, and `/v1/models` omits it. It becomes available again when all applicable limits allow it, including after a period rolls over or a limit is raised or disabled. Counters survive restarts in `model-budgets.json` beside the runtime token usage file; production and development profiles remain separate.
+
+Accounting uses standard OpenAI-compatible response `usage` fields, including Chat Completions SSE and Responses API input/output tokens. Budgeted streaming chat requests enable `stream_options.include_usage`. Costs are local estimates at the configured prices when usage is recorded, not provider invoices: cached-token discounts, tools and other non-token charges are not inferred. There is no universal OpenAI-compatible per-model balance-query API. Only requests passing through this runtime are counted, and historical spending before pricing was configured is not reconstructed.
+
+Limits are checked before forwarding and usage is recorded as responses finish, so already-running requests can exceed a limit; these are not prepaid reservations or strict provider-side spending caps. Successful responses with missing required usage pause limited models conservatively for the current period. Unreadable or unwritable budget storage also blocks limited models. Unlimited models remain available. Removing all limits does not erase counters.
+
 ### 1. Bring a remote API to your Mac
 
 Use local SSH port forwarding (`ssh -L`) to turn an API running on a remote server into a stable loopback endpoint on your Mac:

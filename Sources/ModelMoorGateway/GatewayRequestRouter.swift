@@ -22,6 +22,8 @@ public struct GatewayPreparedRequest: Sendable {
     public var routeID: UUID
     public var endpointID: UUID
     public var urlRequest: URLRequest
+    public var routeConfiguration: ModelRouteConfiguration?
+    var budgetLedger: GatewayBudgetLedger?
 
     public init(routeID: UUID, endpointID: UUID, urlRequest: URLRequest) {
         self.routeID = routeID
@@ -90,8 +92,10 @@ public struct GatewayRequestRouter: Sendable {
     private var routesByPublicModel: [String: ModelRouteConfiguration]
     private var endpointsByID: [UUID: APIEndpointConfiguration]
     private var mappingsByID: [UUID: PortMappingConfiguration]
+    private let budgetLedger: GatewayBudgetLedger?
 
-    public init(snapshot: GatewaySnapshot) {
+    public init(snapshot: GatewaySnapshot, budgetLedger: GatewayBudgetLedger? = nil) {
+        self.budgetLedger = budgetLedger
         self.snapshot = snapshot
         self.routesByPublicModel = [:]
         self.endpointsByID = [:]
@@ -157,6 +161,9 @@ public struct GatewayRequestRouter: Sendable {
         guard let route = routesByPublicModel[publicModel] else {
             return .local(error(status: 404, code: "model_not_found", message: "No enabled route exists for model \(publicModel)."))
         }
+        if budgetLedger?.unavailable(route) == true {
+            return .local(error(status: 429, code: "insufficient_quota", message: "This model is unavailable because its budget is exhausted or usage could not be verified."))
+        }
         guard let endpoint = endpointsByID[route.endpointID],
               endpoint.enabled,
               endpoint.kind == .openAICompatible else {
@@ -172,6 +179,11 @@ public struct GatewayRequestRouter: Sendable {
             return .local(error(status: 424, code: "credential_unavailable", message: "The selected endpoint credential is unavailable."))
         }
         object["model"] = route.upstreamModel
+        if object["stream"] as? Bool == true, pathAndQuery.path == "/v1/chat/completions", route.budget != nil {
+            var options = object["stream_options"] as? [String: Any] ?? [:]
+            options["include_usage"] = true
+            object["stream_options"] = options
+        }
         let rewrittenBody: Data
         do {
             rewrittenBody = try JSONSerialization.data(withJSONObject: object)
@@ -214,7 +226,10 @@ public struct GatewayRequestRouter: Sendable {
             case let .header(name): upstream.setValue(secret, forHTTPHeaderField: name)
             }
         }
-        return .upstream(GatewayPreparedRequest(routeID: route.id, endpointID: endpoint.id, urlRequest: upstream))
+        var prepared = GatewayPreparedRequest(routeID: route.id, endpointID: endpoint.id, urlRequest: upstream)
+        prepared.routeConfiguration = route
+        prepared.budgetLedger = budgetLedger
+        return .upstream(prepared)
     }
 
     private func authenticated(_ headers: [String: String]) -> Bool {
@@ -232,6 +247,7 @@ public struct GatewayRequestRouter: Sendable {
 
     private func modelsResponse() -> GatewayLocalResponse {
         let models = routesByPublicModel.values
+            .filter { budgetLedger?.unavailable($0) != true }
             .map { ["id": $0.publicModel, "object": "model", "owned_by": "modelmoor"] }
             .sorted { ($0["id"] ?? "") < ($1["id"] ?? "") }
         let body = (try? JSONSerialization.data(withJSONObject: ["object": "list", "data": models])) ?? Data("{\"object\":\"list\",\"data\":[]}".utf8)

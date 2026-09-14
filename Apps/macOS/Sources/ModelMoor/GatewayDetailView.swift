@@ -10,6 +10,7 @@ struct GatewayDetailView: View {
     @State private var showsAddAPIKey = false
     @State private var keyToRotate: GatewayAPIKeyConfiguration?
     @State private var keyToDelete: GatewayAPIKeyConfiguration?
+    @State private var budgetRoute: ModelRouteConfiguration?
 
     var body: some View {
         ScrollView {
@@ -27,6 +28,9 @@ struct GatewayDetailView: View {
             .padding(28)
         }
         .navigationTitle("Unified API")
+        .sheet(item: $budgetRoute) { route in
+            ModelBudgetSheet(route: route).environmentObject(model)
+        }
         .sheet(isPresented: $showsAddAPIKey) {
             AddGatewayAPIKeySheet()
                 .environmentObject(model)
@@ -231,6 +235,13 @@ struct GatewayDetailView: View {
                             Label(route.enabled ? "Enabled" : "Disabled", systemImage: route.enabled ? "checkmark.circle.fill" : "circle")
                                 .labelStyle(.titleAndIcon)
                                 .foregroundStyle(route.enabled ? .green : .secondary)
+                            HStack {
+                                Button { budgetRoute = route } label: {
+                                    Image(systemName: "slider.horizontal.3")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Model budget")
+                                .accessibilityLabel("Model budget")
                             Button(role: .destructive) {
                                 model.removeRoute(route.id)
                                 Task { _ = await model.saveGateway() }
@@ -240,6 +251,7 @@ struct GatewayDetailView: View {
                             .buttonStyle(.borderless)
                             .help("Remove model from Unified API")
                             .accessibilityLabel("Remove \(route.publicModel) from Unified API")
+                            }
                         }
                     }
                 }

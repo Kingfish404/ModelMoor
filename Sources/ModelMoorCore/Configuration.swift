@@ -259,6 +259,7 @@ public struct ModelMoorConfiguration: Codable, Equatable, Sendable {
         let endpointByID = Dictionary(uniqueKeysWithValues: endpoints.map { ($0.id, $0) })
         var publicModels = Set<String>()
         for route in routes {
+            try route.budget?.validate()
             let publicModel = route.publicModel.trimmingCharacters(in: .whitespacesAndNewlines)
             let upstreamModel = route.upstreamModel.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !publicModel.isEmpty, !upstreamModel.isEmpty else {

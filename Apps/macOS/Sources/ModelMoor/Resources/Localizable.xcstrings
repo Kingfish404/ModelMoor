@@ -1,6 +1,26 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Model budgets": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "模型预算" } } } },
+    "Budget period": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "预算周期" } } } },
+    "Budget paused": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "预算已暂停" } } } },
+    "Resets at": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重置于" } } } },
+    "Budget storage unavailable": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "预算账本不可用" } } } },
+    "Usage incomplete": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "用量记录不完整" } } } },
+    "Pricing not configured": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "未配置单价" } } } },
+    "Unlimited": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "无限制" } } } },
+    "Save": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "保存" } } } },
+    "Model budget": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "模型预算" } } } },
+    "Daily": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "每日" } } } },
+    "Weekly": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "每周" } } } },
+    "Monthly": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "每月" } } } },
+    "USD per million tokens": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "每百万 token 单价（美元）" } } } },
+    "Input price": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "输入单价" } } } },
+    "Output price": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "输出单价" } } } },
+    "Remove all limits": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "关闭全部上限" } } } },
+    "Token limit": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "Token 上限" } } } },
+    "Amount limit (USD)": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "金额上限（美元）" } } } },
+    "USD": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "美元" } } } },
     "%@  ·  %@ tokens": {
       "localizations": {
         "en": {

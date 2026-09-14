@@ -22,6 +22,9 @@ struct UsageDetailView: View {
                 filters
                 summary
                 trend
+                if !availableRoutes.isEmpty {
+                    ModelBudgetUsageView(routes: availableRoutes.filter { routeID == nil || $0.id == routeID })
+                }
                 breakdown
                 privacyNote
             }

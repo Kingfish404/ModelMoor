@@ -307,19 +307,72 @@ public struct ModelRouteConfiguration: Codable, Equatable, Identifiable, Sendabl
     public var endpointID: UUID
     public var upstreamModel: String
     public var enabled: Bool
+    public var budget: ModelBudgetConfiguration?
 
     public init(
         id: UUID = UUID(),
         publicModel: String,
         endpointID: UUID,
         upstreamModel: String,
-        enabled: Bool = true
+        enabled: Bool = true,
+        budget: ModelBudgetConfiguration? = nil
     ) {
         self.id = id
         self.publicModel = publicModel
         self.endpointID = endpointID
         self.upstreamModel = upstreamModel
         self.enabled = enabled
+        self.budget = budget
+    }
+}
+
+public struct ModelBudgetLimit: Codable, Equatable, Sendable {
+    public var tokens: Int64?
+    public var amount: Decimal?
+
+    public init(tokens: Int64? = nil, amount: Decimal? = nil) {
+        self.tokens = tokens
+        self.amount = amount
+    }
+}
+
+public struct ModelBudgetConfiguration: Codable, Equatable, Sendable {
+    public var daily: ModelBudgetLimit
+    public var weekly: ModelBudgetLimit
+    public var monthly: ModelBudgetLimit
+    public var inputPricePerMillion: Decimal?
+    public var outputPricePerMillion: Decimal?
+
+    public init(
+        daily: ModelBudgetLimit = .init(),
+        weekly: ModelBudgetLimit = .init(),
+        monthly: ModelBudgetLimit = .init(),
+        inputPricePerMillion: Decimal? = nil,
+        outputPricePerMillion: Decimal? = nil
+    ) {
+        self.daily = daily
+        self.weekly = weekly
+        self.monthly = monthly
+        self.inputPricePerMillion = inputPricePerMillion
+        self.outputPricePerMillion = outputPricePerMillion
+    }
+
+    public func validate() throws {
+        for limit in [daily, weekly, monthly] {
+            guard limit.tokens.map({ $0 >= 0 }) ?? true,
+                  limit.amount.map({ !$0.isNaN && $0 >= 0 }) ?? true else {
+                throw ConfigurationError.invalidValue("Model budget limits must be nonnegative.")
+            }
+        }
+        for price in [inputPricePerMillion, outputPricePerMillion].compactMap({ $0 }) {
+            guard !price.isNaN, price >= 0 else {
+                throw ConfigurationError.invalidValue("Model token prices must be nonnegative.")
+            }
+        }
+        if [daily, weekly, monthly].contains(where: { $0.amount != nil }),
+           inputPricePerMillion == nil || outputPricePerMillion == nil {
+            throw ConfigurationError.invalidValue("Amount limits require input and output prices per million tokens in USD.")
+        }
     }
 }
 

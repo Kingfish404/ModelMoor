@@ -73,7 +73,9 @@ Development builds disable login launch and update checks. The production profil
 3. Compiles `Resources/Assets.xcassets` with `actool` (app icon, minimum deployment target 14.0).
 4. Copies the English and Simplified Chinese app localizations into standard `en.lproj` and `zh-Hans.lproj` bundle resources.
 5. Copies SwiftNIO's privacy manifest and the SwiftNIO/CNIOLLHTTP/CLIProxyAPI license notices into the app resources.
-6. Signs the standalone CLI and CLIProxyAPI child executable ad-hoc, then signs the complete app bundle with the selected identity. Only the final step accesses a Keychain private key, limiting a build to at most one password prompt; choosing **Always Allow** for `/usr/bin/codesign` eliminates later prompts.
+6. Signs the standalone CLI and CLIProxyAPI child executable ad-hoc, then signs the complete app bundle with the selected identity. Only the final step accesses a Keychain private key, limiting signing to at most one private-key password prompt; choosing **Always Allow** for `/usr/bin/codesign` eliminates later signing prompts. This does not grant the application access to stored API keys.
+
+Background credential reads use `LAContext.interactionNotAllowed`. With ad-hoc signing, rebuilding changes the application's identity, so existing credentials may require renewed approval or become unavailable even though they remain in Keychain. For reliable access across `make run` builds, install a valid code-signing identity and select it with `MODELMOOR_CODE_SIGN_IDENTITY`. Approve the stably signed application's access to existing items through explicit credential actions when needed. macOS authorizes each Keychain item separately; an initial migration cannot guarantee a single prompt for all existing items. Do not disable Keychain access controls or grant access to all applications to avoid these prompts.
 
 The build uses `--disable-sandbox` and a project-local cache (`.build/cache`, `.build/module-cache`) so it works in restricted environments.
 

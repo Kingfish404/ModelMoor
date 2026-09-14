@@ -9,7 +9,7 @@ struct MenuBarView: View {
     @EnvironmentObject private var updates: UpdateController
 
     var body: some View {
-        Label("\(model.runtimeProfile.displayName), \(overallStatus)", systemImage: model.menuBarSymbol).disabled(true)
+        Text("\(model.runtimeProfile.displayName), \(overallStatus)").disabled(true)
 
         if model.configuration.gateway.enabled { gatewayMenu }
         endpointMenu
@@ -21,24 +21,24 @@ struct MenuBarView: View {
         Button {
             Task { await model.inspectAllEndpoints() }
         } label: {
-            Label(model.isInspectingAllEndpoints ? "Refreshing Status…" : "Refresh Status", systemImage: "arrow.clockwise")
+            Text(model.isInspectingAllEndpoints ? "Refreshing Status…" : "Refresh Status")
         }
         .disabled(!canRefreshAllEndpoints)
 
         Button { lifecycle.showMainWindow() } label: {
-            Label("Open \(model.runtimeProfile.displayName)", systemImage: "macwindow")
+            Text("Open \(model.runtimeProfile.displayName)")
         }
         if let release = updates.availableRelease {
             Button {
                 updates.download(release)
             } label: {
-                Label("Update to \(release.tagName)…", systemImage: "arrow.down.circle.fill")
+                Text("Update to \(release.tagName)…")
             }
         } else if updates.updatesAvailable {
             Button {
                 lifecycle.checkForUpdates()
             } label: {
-                Label(updates.isChecking ? "Checking for Updates…" : "Check for Updates…", systemImage: "arrow.triangle.2.circlepath")
+                Text(updates.isChecking ? "Checking for Updates…" : "Check for Updates…")
             }
             .disabled(updates.isChecking)
         }
@@ -75,7 +75,7 @@ struct MenuBarView: View {
                 lifecycle.showMainWindow()
             }
         } label: {
-            Label("Unified API", systemImage: "point.3.connected.trianglepath.dotted")
+            Text("Unified API")
         }
     }
 
@@ -117,12 +117,12 @@ struct MenuBarView: View {
                             lifecycle.showMainWindow()
                         }
                     } label: {
-                        Label(endpoint.name, systemImage: endpointSymbol(endpoint))
+                        Text(endpoint.name)
                     }
                 }
             }
         } label: {
-            Label("API Endpoints", systemImage: "link")
+            Text("API Endpoints")
         }
     }
 
@@ -142,11 +142,11 @@ struct MenuBarView: View {
                         lifecycle.showMainWindow()
                     }
                 } label: {
-                    Label(endpoint.name, systemImage: "arrow.left.arrow.right")
+                    Text(endpoint.name)
                 }
             }
         } label: {
-            Label("Others", systemImage: "square.stack.3d.up")
+            Text("Others")
         }
     }
 
@@ -179,7 +179,7 @@ struct MenuBarView: View {
                             lifecycle.showMainWindow()
                         }
                     } label: {
-                        Label(connection.name, systemImage: connectionSymbol(connection))
+                        Text(connection.name)
                     }
                 }
                 Divider()
@@ -194,7 +194,7 @@ struct MenuBarView: View {
                 }
             }
         } label: {
-            Label("SSH Connections", systemImage: "network")
+            Text("SSH Connections")
         }
     }
 
@@ -205,7 +205,7 @@ struct MenuBarView: View {
                     model.showEndpoint(item.id)
                     lifecycle.showMainWindow()
                 } label: {
-                    Label("\(item.name), \(compact(item.message))", systemImage: "exclamationmark.triangle.fill")
+                    Text("\(item.name), \(compact(item.message))")
                 }
             }
             if let error = model.errorMessage {
@@ -213,11 +213,11 @@ struct MenuBarView: View {
                     model.navigationRequest = .overview
                     lifecycle.showMainWindow()
                 } label: {
-                    Label(compact(error), systemImage: "exclamationmark.triangle.fill")
+                    Text(compact(error))
                 }
             }
         } label: {
-            Label("Needs Attention, \(attentionCount)", systemImage: "exclamationmark.triangle.fill")
+            Text("Needs Attention, \(attentionCount)")
         }
     }
 
@@ -274,25 +274,6 @@ struct MenuBarView: View {
         let count = inspection.models?.count ?? 0
         return inspection.errorMessage
             ?? AppLocalization.format(count == 1 ? "Ready, %lld model" : "Ready, %lld models", Int64(count))
-    }
-
-    private func endpointSymbol(_ endpoint: APIEndpointConfiguration) -> String {
-        if !endpoint.enabled { return "circle" }
-        if model.inspectingEndpointIDs.contains(endpoint.id) { return "arrow.triangle.2.circlepath" }
-        guard let inspection = model.inspections[endpoint.id] else { return "questionmark.circle" }
-        return inspection.errorMessage == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
-    }
-
-    private func connectionSymbol(_ connection: TunnelConfiguration) -> String {
-        switch model.status(for: connection.id).phase {
-        case .stopped: "circle"
-        case .waitingForNetwork: "wifi.slash"
-        case .connecting: "arrow.triangle.2.circlepath"
-        case .connected: "checkmark.circle.fill"
-        case .disconnecting: "stop.circle"
-        case .waitingToRetry: "clock.arrow.circlepath"
-        case .failed: "exclamationmark.triangle.fill"
-        }
     }
 
     private func compact(_ value: String, limit: Int = 72) -> String {

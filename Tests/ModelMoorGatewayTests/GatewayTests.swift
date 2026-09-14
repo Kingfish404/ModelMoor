@@ -12,6 +12,102 @@ import ModelMoorCore
 import XCTest
 
 final class GatewayTests: XCTestCase {
+    func testBudgetUsageSnapshotMatchesEnforcementAndRollover() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-14T12:00:00Z"))
+        let ledger = GatewayBudgetLedger()
+        let route = ModelRouteConfiguration(
+            publicModel: "test", endpointID: UUID(), upstreamModel: "test",
+            budget: .init(daily: .init(tokens: 100, amount: 1), inputPricePerMillion: 10_000, outputPricePerMillion: 20_000)
+        )
+        ledger.record(route: route, tokens: 60, inputTokens: 20, outputTokens: 40, now: now)
+        let periods = ledger.usage(for: route, now: now)
+        XCTAssertEqual(periods.map(\.id), ["daily", "weekly", "monthly"])
+        XCTAssertEqual(periods[0].tokens, 60)
+        XCTAssertEqual(periods[0].amount, 1)
+        XCTAssertTrue(periods[0].isBlocked)
+        XCTAssertFalse(periods[1].isBlocked)
+        XCTAssertEqual(ledger.unavailable(route, now: now), periods.contains(where: \.isBlocked))
+        let next = ledger.usage(for: route, now: periods[0].resetsAt)
+        XCTAssertEqual(next[0].tokens, 0)
+        XCTAssertEqual(next[1].tokens, 60)
+        XCTAssertFalse(next[0].isBlocked)
+        ledger.record(route: route, tokens: nil, inputTokens: nil, outputTokens: nil, now: now)
+        XCTAssertTrue(ledger.usage(for: route, now: now)[0].usageUnknown)
+    }
+
+    func testBudgetRouterHidesAndRejectsExhaustedModel() throws {
+        var snapshot = makeFixture().snapshot
+        snapshot.configuration.routes[0].budget = .init(daily: .init(tokens: 0))
+        let router = GatewayRequestRouter(snapshot: snapshot, budgetLedger: GatewayBudgetLedger())
+        let model = snapshot.configuration.routes[0].publicModel
+        let body = try JSONSerialization.data(withJSONObject: ["model": model])
+        let decision = router.route(.init(method: "POST", uri: "/v1/chat/completions", headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"], body: body))
+        guard case let .local(response) = decision else { return XCTFail("Exhausted model reached upstream") }
+        XCTAssertEqual(response.status, 429)
+        XCTAssertTrue(String(decoding: response.body, as: UTF8.self).contains("insufficient_quota"))
+        guard case let .local(models) = router.route(.init(method: "GET", uri: "/v1/models", headers: ["Authorization": "Bearer local-token"], body: Data())) else { return XCTFail() }
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: models.body) as? [String: Any])
+        let entries = try XCTUnwrap(object["data"] as? [[String: String]])
+        XCTAssertFalse(entries.contains { $0["id"] == model })
+    }
+
+    func testBudgetWeeklyMonthlyResetsAndUnknownUsage() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-14T12:00:00Z"))
+        for limit in [ModelBudgetConfiguration(weekly: .init(tokens: 1)), ModelBudgetConfiguration(monthly: .init(tokens: 1))] {
+            let ledger = GatewayBudgetLedger()
+            let route = ModelRouteConfiguration(publicModel: "test", endpointID: UUID(), upstreamModel: "test", budget: limit)
+            ledger.record(route: route, tokens: 1, inputTokens: 1, outputTokens: 0, now: now)
+            XCTAssertTrue(ledger.unavailable(route, now: now.addingTimeInterval(86_400)))
+            XCTAssertFalse(ledger.unavailable(route, now: now.addingTimeInterval(32 * 86_400)))
+        }
+        let ledger = GatewayBudgetLedger()
+        var route = ModelRouteConfiguration(publicModel: "test", endpointID: UUID(), upstreamModel: "test", budget: .init(daily: .init(tokens: 100)))
+        ledger.record(route: route, tokens: nil, inputTokens: nil, outputTokens: nil, now: now)
+        XCTAssertTrue(ledger.unavailable(route, now: now))
+        route.budget = nil
+        XCTAssertFalse(ledger.unavailable(route, now: now))
+        let split = GatewayTokenUsageParser.splitTokens(in: Data(#"{"response":{"usage":{"input_tokens":12,"output_tokens":8}}}"#.utf8))
+        XCTAssertEqual(split?.input, 12)
+        XCTAssertEqual(split?.output, 8)
+    }
+
+    func testBudgetLedgerEnforcesIndependentLimitsAndResetsAndPersists() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let ledger = GatewayBudgetLedger(fileURL: url)
+        let now = Date(timeIntervalSince1970: 1_789_344_000)
+        var route = ModelRouteConfiguration(publicModel: "test", endpointID: UUID(), upstreamModel: "test")
+        route.budget = ModelBudgetConfiguration(
+            daily: .init(tokens: 100), monthly: .init(amount: 1),
+            inputPricePerMillion: 10_000, outputPricePerMillion: 20_000
+        )
+        XCTAssertFalse(ledger.unavailable(route, now: now))
+        ledger.record(route: route, tokens: 60, inputTokens: 20, outputTokens: 40, now: now)
+        XCTAssertTrue(ledger.unavailable(route, now: now))
+        XCTAssertTrue(GatewayBudgetLedger(fileURL: url).unavailable(route, now: now))
+        route.budget?.monthly.amount = nil
+        XCTAssertFalse(ledger.unavailable(route, now: now))
+        ledger.record(route: route, tokens: 40, inputTokens: 40, outputTokens: 0, now: now)
+        XCTAssertTrue(ledger.unavailable(route, now: now))
+        XCTAssertFalse(ledger.unavailable(route, now: now.addingTimeInterval(86_400)))
+        route.budget = nil
+        XCTAssertFalse(ledger.unavailable(route, now: now))
+    }
+
+    func testModelBudgetConfigurationValidationAndLegacyDecoding() throws {
+        try ModelBudgetConfiguration().validate()
+        XCTAssertThrowsError(try ModelBudgetConfiguration(daily: .init(tokens: -1)).validate())
+        XCTAssertThrowsError(try ModelBudgetConfiguration(monthly: .init(amount: 1)).validate())
+        try ModelBudgetConfiguration(
+            weekly: .init(tokens: 100, amount: 1),
+            inputPricePerMillion: 0,
+            outputPricePerMillion: 2
+        ).validate()
+        let route = ModelRouteConfiguration(publicModel: "test", endpointID: UUID(), upstreamModel: "test")
+        let data = try JSONEncoder().encode(route)
+        XCTAssertNil(try JSONDecoder().decode(ModelRouteConfiguration.self, from: data).budget)
+    }
+
     func testLoopbackListenerServesAuthenticatedModelList() async throws {
         let fixture = makeFixture()
         var configuration = fixture.snapshot.configuration
@@ -128,7 +224,9 @@ final class GatewayTests: XCTestCase {
             let configured = gatewayFixture(gatewayPort: 17_777, upstreamPort: upstream.port)
             let usage = TestUsageRecorder()
             let service = ephemeralGatewayService(usageHandler: usage.record)
-            try await service.start(snapshot: configured.snapshot)
+            var snapshot = configured.snapshot
+            snapshot.configuration.routes[0].budget = .init(daily: .init(tokens: 42))
+            try await service.start(snapshot: snapshot)
             let gatewayPort = try XCTUnwrap(service.state.runningPort)
 
             var request = URLRequest(url: URL(string: "http://127.0.0.1:\(gatewayPort)/v1/chat/completions")!)
@@ -146,6 +244,12 @@ final class GatewayTests: XCTestCase {
             XCTAssertFalse(upstream.requestText.contains("Bearer local-token"))
             XCTAssertTrue(upstream.requestText.contains("upstream-model"))
             XCTAssertEqual(usage.values.map(\.tokens), fixtureResponse.statusCode == 200 ? [42] : [])
+            if fixtureResponse.statusCode == 200 {
+                let (blockedBody, blockedResponse) = try await URLSession.shared.data(for: request)
+                XCTAssertEqual((blockedResponse as? HTTPURLResponse)?.statusCode, 429)
+                XCTAssertTrue(String(decoding: blockedBody, as: UTF8.self).contains("insufficient_quota"))
+                XCTAssertEqual(upstream.requestCount, 1)
+            }
             await service.stop()
         }
     }

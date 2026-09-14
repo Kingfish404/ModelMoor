@@ -16,6 +16,26 @@ public struct GatewayTokenUsage: Equatable, Sendable {
 struct GatewayTokenUsageParser {
     static let maximumBufferedJSONBytes = 4 * 1_024 * 1_024
 
+    static func splitTokens(in data: Data, isSSE: Bool = false) -> (input: Int64, output: Int64)? {
+        let json: Data
+        if isSSE {
+            let payload = String(decoding: data, as: UTF8.self)
+                .split(whereSeparator: \.isNewline)
+                .filter { $0.hasPrefix("data:") }
+                .map { $0.dropFirst(5).trimmingCharacters(in: .whitespaces) }
+                .joined(separator: "\n")
+            json = Data(payload.utf8)
+        } else {
+            json = data
+        }
+        guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: Any] else { return nil }
+        let response = root["response"] as? [String: Any]
+        guard let usage = (root["usage"] ?? response?["usage"]) as? [String: Any],
+              let input = integer(usage["prompt_tokens"]) ?? integer(usage["input_tokens"]),
+              let output = integer(usage["completion_tokens"]) ?? integer(usage["output_tokens"]) else { return nil }
+        return (input, output)
+    }
+
     static func tokens(inJSON data: Data) -> Int64? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -56,7 +76,7 @@ struct GatewayTokenUsageParser {
               CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
         let double = number.doubleValue
         guard double.isFinite, double >= 0, double.rounded(.towardZero) == double,
-              double <= Double(Int64.max) else { return nil }
+              double < Double(Int64.max) else { return nil }
         return Int64(double)
     }
 }

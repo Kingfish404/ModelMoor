@@ -98,6 +98,8 @@
 	<string>All endpoints</string>
 	<key>All models</key>
 	<string>All models</string>
+	<key>Amount limit (USD)</key>
+	<string>Amount limit (USD)</string>
 	<key>App Preferences</key>
 	<string>App Preferences</string>
 	<key>Apply Changes</key>
@@ -122,6 +124,12 @@
 	<string>Basics</string>
 	<key>Bearer API key, optional</key>
 	<string>Bearer API key, optional</string>
+	<key>Budget paused</key>
+	<string>Budget paused</string>
+	<key>Budget period</key>
+	<string>Budget period</string>
+	<key>Budget storage unavailable</key>
+	<string>Budget storage unavailable</string>
 	<key>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</key>
 	<string>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</string>
 	<key>Cancel</key>
@@ -250,6 +258,8 @@
 	<string>Current selection is hidden by search</string>
 	<key>DGX Spark API</key>
 	<string>DGX Spark API</string>
+	<key>Daily</key>
+	<string>Daily</string>
 	<key>DeepSeek API key</key>
 	<string>DeepSeek API key</string>
 	<key>Delete API Endpoint…</key>
@@ -356,6 +366,8 @@
 	<string>In use, saved in Keychain</string>
 	<key>Included models</key>
 	<string>Included models</string>
+	<key>Input price</key>
+	<string>Input price</string>
 	<key>Inspect the tokens reported by models served through the Unified API.</key>
 	<string>Inspect the tokens reported by models served through the Unified API.</string>
 	<key>Invalid endpoint URL</key>
@@ -398,6 +410,10 @@
 	<string>Method</string>
 	<key>Model</key>
 	<string>Model</string>
+	<key>Model budget</key>
+	<string>Model budget</string>
+	<key>Model budgets</key>
+	<string>Model budgets</string>
 	<key>Model list path</key>
 	<string>Model list path</string>
 	<key>Model usage</key>
@@ -428,6 +444,8 @@
 	<string>Models, 1</string>
 	<key>Models, 1 discovered</key>
 	<string>Models, 1 discovered</string>
+	<key>Monthly</key>
+	<string>Monthly</string>
 	<key>More account actions</key>
 	<string>More account actions</string>
 	<key>More actions for %@</key>
@@ -508,6 +526,8 @@
 	<string>Opens API endpoint details</string>
 	<key>Others</key>
 	<string>Others</string>
+	<key>Output price</key>
+	<string>Output price</string>
 	<key>Overview</key>
 	<string>Overview</string>
 	<key>Persistent Storage</key>
@@ -520,6 +540,8 @@
 	<string>Port forward type</string>
 	<key>Preset</key>
 	<string>Preset</string>
+	<key>Pricing not configured</key>
+	<string>Pricing not configured</string>
 	<key>Provider credentials are managed in Subscription.</key>
 	<string>Provider credentials are managed in Subscription.</string>
 	<key>Public model</key>
@@ -584,6 +606,8 @@
 	<string>Remove Account…</string>
 	<key>Remove Key…</key>
 	<string>Remove Key…</string>
+	<key>Remove all limits</key>
+	<string>Remove all limits</string>
 	<key>Remove model from Unified API</key>
 	<string>Remove model from Unified API</string>
 	<key>Remove port forward</key>
@@ -598,6 +622,8 @@
 	<string>Replace Key…</string>
 	<key>Require API key</key>
 	<string>Require API key</string>
+	<key>Resets at</key>
+	<string>Resets at</string>
 	<key>Restore Defaults</key>
 	<string>Restore Defaults</string>
 	<key>Retained as an unchanged migration source for older ModelMoor versions.</key>
@@ -634,6 +660,8 @@
 	<string>SSH connection not found</string>
 	<key>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</key>
 	<string>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</string>
+	<key>Save</key>
+	<string>Save</string>
 	<key>Save Port Forward</key>
 	<string>Save Port Forward</string>
 	<key>Saved in Keychain</key>
@@ -726,6 +754,8 @@
 	<string>Time range</string>
 	<key>Token counts and internal route identifiers; request and response content is not stored.</key>
 	<string>Token counts and internal route identifiers; request and response content is not stored.</string>
+	<key>Token limit</key>
+	<string>Token limit</string>
 	<key>Token trend</key>
 	<string>Token trend</string>
 	<key>Token usage over %@</key>
@@ -734,10 +764,16 @@
 	<string>Tokens</string>
 	<key>Type</key>
 	<string>Type</string>
+	<key>USD</key>
+	<string>USD</string>
+	<key>USD per million tokens</key>
+	<string>USD per million tokens</string>
 	<key>Unified API</key>
 	<string>Unified API</string>
 	<key>Unified API gives local clients a stable OpenAI-compatible endpoint while ModelMoor routes each public model name to its source API.</key>
 	<string>Unified API gives local clients a stable OpenAI-compatible endpoint while ModelMoor routes each public model name to its source API.</string>
+	<key>Unlimited</key>
+	<string>Unlimited</string>
 	<key>Update checks are disabled for development builds.</key>
 	<string>Update checks are disabled for development builds.</string>
 	<key>Update to %@…</key>
@@ -762,6 +798,8 @@
 	<string>Usage history stores timestamps, token totals, and internal route and endpoint identifiers. Prompts, responses, model names, headers, and API keys are not stored. Streaming requests appear only when the upstream sends usage data.</string>
 	<key>Usage history unavailable</key>
 	<string>Usage history unavailable</string>
+	<key>Usage incomplete</key>
+	<string>Usage incomplete</string>
 	<key>Use %@</key>
 	<string>Use %@</string>
 	<key>Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.</key>
@@ -786,6 +824,8 @@
 	<string>Waiting for %@ sign-in</string>
 	<key>Waiting for sign-in</key>
 	<string>Waiting for sign-in</string>
+	<key>Weekly</key>
+	<string>Weekly</string>
 	<key>Where is the API running?</key>
 	<string>Where is the API running?</string>
 	<key>Window and update preferences. Login launch is managed separately by macOS.</key>

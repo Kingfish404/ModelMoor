@@ -11,6 +11,22 @@ import XCTest
 import ModelMoorCore
 
 final class ModelMoorApplicationTests: XCTestCase {
+    func testModelBudgetUsageReadsPersistedCalendarTotals() async throws {
+        let (session, directory) = try makeSession()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let profile = ModelMoorRuntimeProfile.make(
+            .development, homeDirectory: directory,
+            configurationHome: directory.appendingPathComponent("config", isDirectory: true)
+        )
+        let route = ModelRouteConfiguration(publicModel: "test", endpointID: UUID(), upstreamModel: "test")
+        let ledger = GatewayBudgetLedger(fileURL: profile.tokenUsageURL.deletingLastPathComponent().appendingPathComponent("model-budgets.json"))
+        ledger.record(route: route, tokens: 50, inputTokens: 30, outputTokens: 20)
+        let report = await session.modelBudgetUsage(for: [route])
+        XCTAssertEqual(report[route.id]?.count, 3)
+        XCTAssertEqual(report[route.id]?.first?.tokens, 50)
+        XCTAssertFalse(try XCTUnwrap(report[route.id]?.first).isBlocked)
+    }
+
     private func makeSession(
         _ name: String = UUID().uuidString,
         runtimeLockURL: URL? = nil,

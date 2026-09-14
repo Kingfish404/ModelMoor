@@ -20,6 +20,7 @@ public final class GatewayService: @unchecked Sendable {
     private let upstreamCancellationObserver: (@Sendable () -> Void)?
     private let bindingPortOverride: Int?
     private let connections = GatewayConnectionRegistry()
+    private var budgetLedger = GatewayBudgetLedger()
     private let lock = NSLock()
     private var serverChannel: Channel?
     private var currentState: GatewayServiceState = .stopped
@@ -69,7 +70,7 @@ public final class GatewayService: @unchecked Sendable {
         }
         if serverChannel != nil { await stop() }
 
-        let router = GatewayRequestRouter(snapshot: snapshot)
+        let router = GatewayRequestRouter(snapshot: snapshot, budgetLedger: budgetLedger)
         let limiter = self.limiter
         let connections = self.connections
         let usageHandler = self.usageHandler
@@ -131,6 +132,10 @@ public final class GatewayService: @unchecked Sendable {
         try? await channel?.close().get()
         await connections.closeAll()
     }
+
+    fileprivate func useBudgetLedger(_ ledger: GatewayBudgetLedger) {
+        budgetLedger = ledger
+    }
 }
 
 private final class GatewayConnectionRegistry: @unchecked Sendable {
@@ -176,13 +181,16 @@ public actor GatewayServiceCoordinator {
 
     public init(
         maximumActiveRequests: Int = 64,
+        budgetLedger: GatewayBudgetLedger = GatewayBudgetLedger(),
         usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil
     ) {
         serviceFactory = {
-            GatewayService(
+            let service = GatewayService(
                 maximumActiveRequests: maximumActiveRequests,
                 usageHandler: usageHandler
             )
+            service.useBudgetLedger(budgetLedger)
+            return service
         }
     }
 
@@ -492,6 +500,14 @@ private final class GatewayResponseWriter: @unchecked Sendable {
         var responseStarted = false
         var responseIsEventStream = false
         var usageTokens: Int64?
+        var inputTokens: Int64?
+        var outputTokens: Int64?
+        var receivedSuccessfulResponse = false
+        defer {
+            if receivedSuccessfulResponse, let route = request.routeConfiguration {
+                request.budgetLedger?.record(route: route, tokens: usageTokens, inputTokens: inputTokens, outputTokens: outputTokens)
+            }
+        }
         do {
             let (chunks, rawResponse) = try await bridge.start(
                 session: upstream.session,
@@ -506,6 +522,7 @@ private final class GatewayResponseWriter: @unchecked Sendable {
                 return
             }
             let blocked = Set(["connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade", "content-length", "content-encoding"])
+            receivedSuccessfulResponse = (200..<300).contains(response.statusCode)
             var headers = HTTPHeaders()
             for (rawName, rawValue) in response.allHeaderFields {
                 let name = String(describing: rawName)
@@ -540,6 +557,10 @@ private final class GatewayResponseWriter: @unchecked Sendable {
                         if isEventStream, let parsed = GatewayTokenUsageParser.tokens(inSSEEvent: chunk) {
                             usageTokens = max(usageTokens ?? 0, parsed)
                         }
+                        if isEventStream, let split = GatewayTokenUsageParser.splitTokens(in: chunk, isSSE: true) {
+                            inputTokens = max(inputTokens ?? 0, split.input)
+                            outputTokens = max(outputTokens ?? 0, split.output)
+                        }
                         await waitUntilWritable()
                         await writeBody(chunk)
                         chunk.removeAll(keepingCapacity: true)
@@ -548,9 +569,20 @@ private final class GatewayResponseWriter: @unchecked Sendable {
             }
             if !isEventStream, !usageBodyOverflowed {
                 usageTokens = GatewayTokenUsageParser.tokens(inJSON: usageBody)
+                let split = GatewayTokenUsageParser.splitTokens(in: usageBody)
+                inputTokens = split?.input
+                outputTokens = split?.output
             } else if isEventStream, !chunk.isEmpty,
                       let parsed = GatewayTokenUsageParser.tokens(inSSEEvent: chunk) {
                 usageTokens = max(usageTokens ?? 0, parsed)
+                if let split = GatewayTokenUsageParser.splitTokens(in: chunk, isSSE: true) {
+                    inputTokens = max(inputTokens ?? 0, split.input)
+                    outputTokens = max(outputTokens ?? 0, split.output)
+                }
+            }
+            if receivedSuccessfulResponse, let route = request.routeConfiguration {
+                request.budgetLedger?.record(route: route, tokens: usageTokens, inputTokens: inputTokens, outputTokens: outputTokens)
+                receivedSuccessfulResponse = false
             }
             // Report usage BEFORE the final flush so recording is ordered ahead
             // of the client observing connection close on every platform.
