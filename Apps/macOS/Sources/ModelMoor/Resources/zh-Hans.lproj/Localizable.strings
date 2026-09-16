@@ -46,10 +46,8 @@
 	<string>API 密钥（可选）</string>
 	<key>API keys</key>
 	<string>API 密钥</string>
-	<key>API keys and management passwords are stored by macOS, not in a ModelMoor file.</key>
-	<string>API 密钥和管理密码由 macOS 保存，不会写入 ModelMoor 文件。</string>
-	<key>API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.</key>
-	<string>API 密钥和管理密码由 macOS 保存。旧版服务仅用于升级兼容性读取。</string>
+	<key>API keys and management passwords are stored in a private JSON file (0600).</key>
+	<string>API 密钥和管理密码存储在私有 JSON 文件中（权限 0600）。</string>
 	<key>API keys, public model names, and route configuration stay in Unified API.</key>
 	<string>API 密钥、公开模型名称和路由配置均在统一 API 中管理。</string>
 	<key>Accept this key</key>
@@ -286,8 +284,8 @@
 	<string>诊断与隐私</string>
 	<key>Direct Connection</key>
 	<string>直接连接</string>
-	<key>Direct HTTPS API</key>
-	<string>直接 HTTPS API</string>
+	<key>Direct HTTP(S) API</key>
+	<string>直连 HTTP(S) API</string>
 	<key>Disable Unified API</key>
 	<string>停用统一 API</string>
 	<key>Disabled</key>
@@ -322,6 +320,8 @@
 	<string>动态端口转发 (-D)</string>
 	<key>Each successful sign-in adds a separate credential to the account pool.</key>
 	<string>每次成功登录都会向账户池添加一份独立凭据。</string>
+	<key>Edit Model Alias</key>
+	<string>编辑模型别名</string>
 	<key>Edit Port Forward…</key>
 	<string>编辑端口转发…</string>
 	<key>Edit port forward</key>
@@ -348,12 +348,12 @@
 	<string>失败阈值</string>
 	<key>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</key>
 	<string>固定转发连接一个目标。动态转发在此 Mac (-D) 或 SSH 服务器 (-R) 上提供 SOCKS 4/5 代理。</string>
-	<key>Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.</key>
-	<string>为密钥指定客户端或设备名称。生成的值将存入钥匙串并复制到剪贴板。</string>
-	<key>HTTPS base URL</key>
-	<string>HTTPS 基础 URL</string>
-	<key>HTTPS origin</key>
-	<string>HTTPS 源站</string>
+	<key>Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.</key>
+	<string>为密钥指定客户端或设备名称。生成的值将存入私有密钥文件并复制到剪贴板。</string>
+	<key>HTTP(S) base URL</key>
+	<string>HTTP(S) 基础 URL</string>
+	<key>HTTP(S) origin</key>
+	<string>HTTP(S) 源站</string>
 	<key>Health path</key>
 	<string>健康检查路径</string>
 	<key>Host</key>
@@ -362,8 +362,8 @@
 	<string>空闲</string>
 	<key>In progress</key>
 	<string>进行中</string>
-	<key>In use, saved in Keychain</key>
-	<string>正在使用，已存入钥匙串</string>
+	<key>In use, saved in the private secrets file</key>
+	<string>正在使用，已存入私有密钥文件</string>
 	<key>Included models</key>
 	<string>包含的模型</string>
 	<key>Input price</key>
@@ -374,8 +374,6 @@
 	<string>端点 URL 无效</string>
 	<key>Keepalive interval</key>
 	<string>保活间隔</string>
-	<key>Keychain Secrets</key>
-	<string>钥匙串机密</string>
 	<key>Last checked</key>
 	<string>上次检查</string>
 	<key>Last checked %@</key>
@@ -510,14 +508,12 @@
 	<string>开</string>
 	<key>One local URL for the models you choose.</key>
 	<string>用一个本地 URL 访问所选模型。</string>
-	<key>Only direct HTTPS API endpoints can be duplicated.</key>
-	<string>只能复制用户创建的直连 HTTPS API 端点。</string>
+	<key>Only direct HTTP(S) API endpoints can be duplicated.</key>
+	<string>只能复制用户创建的直连 HTTP(S) API 端点。</string>
 	<key>Open %@</key>
 	<string>打开 %@</string>
 	<key>Open Folder</key>
 	<string>打开文件夹</string>
-	<key>Open Keychain Access</key>
-	<string>打开钥匙串访问</string>
 	<key>Open sign-in page</key>
 	<string>打开登录页面</string>
 	<key>Open the %@ folder in Finder</key>
@@ -582,6 +578,8 @@
 	<string>正在刷新用量</string>
 	<key>Refreshing…</key>
 	<string>正在刷新…</string>
+	<key>Reload Configuration</key>
+	<string>重新加载配置</string>
 	<key>Reload SSH configuration</key>
 	<string>重新加载 SSH 配置</string>
 	<key>Reload ~/.ssh/config</key>
@@ -664,12 +662,14 @@
 	<string>保存</string>
 	<key>Save Port Forward</key>
 	<string>保存端口转发</string>
-	<key>Saved in Keychain</key>
-	<string>已存入钥匙串</string>
+	<key>Saved in the private secrets file</key>
+	<string>已存入私有密钥文件</string>
 	<key>Search Sidebar</key>
 	<string>搜索侧边栏</string>
 	<key>Search connections and endpoints</key>
 	<string>搜索连接和端点</string>
+	<key>Secrets File</key>
+	<string>密钥文件</string>
 	<key>Selected time</key>
 	<string>所选时间</string>
 	<key>Selected tokens</key>
@@ -724,14 +724,14 @@
 	<string>测试并创建</string>
 	<key>The SSH port forward is missing</key>
 	<string>缺少 SSH 端口转发</string>
-	<key>The internal loopback key is generated from Keychain into the helper's private configuration.</key>
-	<string>内部回环密钥由钥匙串生成到辅助程序的私有配置中。</string>
-	<key>The key is stored in Keychain and is never written to ModelMoor configuration.</key>
-	<string>密钥存储在钥匙串中，绝不会写入 ModelMoor 配置。</string>
-	<key>The key is stored in Keychain and is never written to the ModelMoor configuration file.</key>
-	<string>密钥存储在钥匙串中，绝不会写入 ModelMoor 配置文件。</string>
-	<key>The key named %@ will be removed from Keychain.</key>
-	<string>名为 %@ 的密钥将从钥匙串中移除。</string>
+	<key>The internal loopback key is generated from the private secrets file into the helper's private configuration.</key>
+	<string>内部回环密钥由私有密钥文件生成到辅助程序的私有配置中。</string>
+	<key>The key is stored in the private secrets file and is never written to ModelMoor configuration.</key>
+	<string>密钥存储在私有密钥文件中，绝不会写入 ModelMoor 配置。</string>
+	<key>The key is stored in the private secrets file and is never written to the ModelMoor configuration file.</key>
+	<string>密钥存储在私有密钥文件中，绝不会写入 ModelMoor 配置文件。</string>
+	<key>The key named %@ will be removed from the private secrets file.</key>
+	<string>名为 %@ 的密钥将从私有密钥文件中移除。</string>
 	<key>The listener stays on loopback, so the forwarded port is not exposed to the LAN.</key>
 	<string>监听器仅绑定回环地址，因此转发端口不会暴露给局域网。</string>
 	<key>The local port is allocated automatically and remains loopback-only.</key>
@@ -802,10 +802,10 @@
 	<string>用量记录不完整</string>
 	<key>Use %@</key>
 	<string>使用 %@</string>
-	<key>Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.</key>
-	<string>使用此 Mac 可直接访问的商业或自托管 HTTPS 端点。</string>
-	<key>Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.</key>
-	<string>通过 SSH 使用远程模型，或连接直连 HTTPS API。ModelMoor 会将传输细节与日常工作流分离。</string>
+	<key>Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.</key>
+	<string>使用此 Mac 可直接访问的商业或自托管 HTTP 或 HTTPS 端点。</string>
+	<key>Use a remote model over SSH or connect a direct HTTP(S) API. ModelMoor keeps transport details out of the normal workflow.</key>
+	<string>通过 SSH 使用远程模型，或连接直连 HTTP(S) API。ModelMoor 会将传输细节与日常工作流分离。</string>
 	<key>Use for routing</key>
 	<string>用于路由</string>
 	<key>Used By</key>

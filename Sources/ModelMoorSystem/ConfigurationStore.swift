@@ -195,7 +195,7 @@ public actor ConfigurationStore {
                     repaired.endpoints[index].authentication = .none
                 }
             } catch {
-                // Keep authentication unchanged when Keychain availability is uncertain.
+                // Keep authentication unchanged when secret storage availability is uncertain.
             }
         }
         return repaired
@@ -243,7 +243,7 @@ public actor ConfigurationStore {
         do {
             return try endpointCredentialLookup(endpointID)?.isEmpty == false
         } catch {
-            // Conservatively preserve authentication if Keychain cannot be queried.
+            // Conservatively preserve authentication if secret storage cannot be queried.
             return true
         }
     }

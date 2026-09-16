@@ -75,13 +75,10 @@ final class AppModel: ObservableObject {
         store: ConfigurationStore? = nil,
         inspector: any APIInspecting = APIInspector(),
         sshConfigScanner: any SSHConfigScanning = SSHConfigScanner(),
-        tokenStore: KeychainTokenStore? = nil,
+        tokenStore: (any ModelMoorSecretStore)? = nil,
         tokenUsageStore: TokenUsageStore? = nil
     ) {
-        let resolvedTokenStore = tokenStore ?? KeychainTokenStore(
-            service: runtimeProfile.secretService,
-            fallbackServices: runtimeProfile.legacySecretServices
-        )
+        let resolvedTokenStore = tokenStore ?? (try! SecretStoreResolver.defaultStore(profile: runtimeProfile))
         let resolvedStore = store ?? ConfigurationStore(
             fileURL: runtimeProfile.configurationURL,
             legacyImportURL: runtimeProfile.legacyConfigurationURL,
@@ -772,6 +769,27 @@ final class AppModel: ObservableObject {
     }
 
     func saveGateway() async -> Bool {
+        await persistGateway(configuration)
+    }
+
+    func renameRoute(_ routeID: UUID, publicModel: String) async -> Bool {
+        var candidate = configuration
+        guard let index = candidate.routes.firstIndex(where: { $0.id == routeID }) else { return false }
+        candidate.routes[index].publicModel = publicModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return await persistGateway(candidate)
+    }
+
+    func reloadConfiguration() async {
+        do {
+            try await session.reloadConfiguration()
+            await syncFromSession()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func persistGateway(_ configuration: ModelMoorConfiguration) async -> Bool {
         do {
             try await session.saveConfiguration(configuration)
             await syncFromSession()
@@ -1148,16 +1166,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func openKeychainAccess() {
-        guard let applicationURL = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: "com.apple.keychainaccess"
-        ), NSWorkspace.shared.open(applicationURL) else {
-            errorMessage = PersistenceLocationError.keychainAccessUnavailable.localizedDescription
-            return
-        }
-        errorMessage = nil
-    }
-
     func tunnelBinding(id: UUID) -> Binding<TunnelConfiguration>? {
         guard let index = configuration.tunnels.firstIndex(where: { $0.id == id }) else { return nil }
         return Binding(
@@ -1304,14 +1312,11 @@ final class AppModel: ObservableObject {
 
 private enum PersistenceLocationError: LocalizedError {
     case couldNotOpen(String)
-    case keychainAccessUnavailable
 
     var errorDescription: String? {
         switch self {
         case let .couldNotOpen(path):
             "Could not open the persistence folder: \(path)"
-        case .keychainAccessUnavailable:
-            "Keychain Access could not be opened on this Mac."
         }
     }
 }

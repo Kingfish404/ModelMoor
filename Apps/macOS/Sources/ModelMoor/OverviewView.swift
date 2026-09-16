@@ -14,7 +14,7 @@ struct OverviewView: View {
                     ContentUnavailableView {
                         Label("Connect your first API", systemImage: "link.badge.plus")
                     } description: {
-                        Text("Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.")
+                        Text("Use a remote model over SSH or connect a direct HTTP(S) API. ModelMoor keeps transport details out of the normal workflow.")
                     } actions: {
                         Button("Add API Endpoint…", action: addEndpoint)
                             .buttonStyle(.borderedProminent)

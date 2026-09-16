@@ -194,7 +194,7 @@ public enum TUIInteractionModel {
     with arrows to select. Control-C or Alt-W copies the selection. Enter
     commands only in moor>. A focused list copies its selected row with Control-C.
     Subscriptions are available in pane 5. Settings are available in pane 7.
-    Secrets are stored in the system keychain.
+    Secrets are stored in the private secrets file.
     """
     }
 

@@ -46,10 +46,8 @@
 	<string>API key, optional</string>
 	<key>API keys</key>
 	<string>API keys</string>
-	<key>API keys and management passwords are stored by macOS, not in a ModelMoor file.</key>
-	<string>API keys and management passwords are stored by macOS, not in a ModelMoor file.</string>
-	<key>API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.</key>
-	<string>API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.</string>
+	<key>API keys and management passwords are stored in a private JSON file (0600).</key>
+	<string>API keys and management passwords are stored in a private JSON file (0600).</string>
 	<key>API keys, public model names, and route configuration stay in Unified API.</key>
 	<string>API keys, public model names, and route configuration stay in Unified API.</string>
 	<key>Accept this key</key>
@@ -286,8 +284,8 @@
 	<string>Diagnostics and Privacy</string>
 	<key>Direct Connection</key>
 	<string>Direct Connection</string>
-	<key>Direct HTTPS API</key>
-	<string>Direct HTTPS API</string>
+	<key>Direct HTTP(S) API</key>
+	<string>Direct HTTP(S) API</string>
 	<key>Disable Unified API</key>
 	<string>Disable Unified API</string>
 	<key>Disabled</key>
@@ -322,6 +320,8 @@
 	<string>Dynamic port forwarding (-D)</string>
 	<key>Each successful sign-in adds a separate credential to the account pool.</key>
 	<string>Each successful sign-in adds a separate credential to the account pool.</string>
+	<key>Edit Model Alias</key>
+	<string>Edit Model Alias</string>
 	<key>Edit Port Forward…</key>
 	<string>Edit Port Forward…</string>
 	<key>Edit port forward</key>
@@ -348,12 +348,12 @@
 	<string>Failure threshold</string>
 	<key>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</key>
 	<string>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</string>
-	<key>Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.</key>
-	<string>Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.</string>
-	<key>HTTPS base URL</key>
-	<string>HTTPS base URL</string>
-	<key>HTTPS origin</key>
-	<string>HTTPS origin</string>
+	<key>Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.</key>
+	<string>Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.</string>
+	<key>HTTP(S) base URL</key>
+	<string>HTTP(S) base URL</string>
+	<key>HTTP(S) origin</key>
+	<string>HTTP(S) origin</string>
 	<key>Health path</key>
 	<string>Health path</string>
 	<key>Host</key>
@@ -362,8 +362,8 @@
 	<string>Idle</string>
 	<key>In progress</key>
 	<string>In progress</string>
-	<key>In use, saved in Keychain</key>
-	<string>In use, saved in Keychain</string>
+	<key>In use, saved in the private secrets file</key>
+	<string>In use, saved in the private secrets file</string>
 	<key>Included models</key>
 	<string>Included models</string>
 	<key>Input price</key>
@@ -374,8 +374,6 @@
 	<string>Invalid endpoint URL</string>
 	<key>Keepalive interval</key>
 	<string>Keepalive interval</string>
-	<key>Keychain Secrets</key>
-	<string>Keychain Secrets</string>
 	<key>Last checked</key>
 	<string>Last checked</string>
 	<key>Last checked %@</key>
@@ -510,14 +508,12 @@
 	<string>On</string>
 	<key>One local URL for the models you choose.</key>
 	<string>One local URL for the models you choose.</string>
-	<key>Only direct HTTPS API endpoints can be duplicated.</key>
-	<string>Only direct HTTPS API endpoints can be duplicated.</string>
+	<key>Only direct HTTP(S) API endpoints can be duplicated.</key>
+	<string>Only direct HTTP(S) API endpoints can be duplicated.</string>
 	<key>Open %@</key>
 	<string>Open %@</string>
 	<key>Open Folder</key>
 	<string>Open Folder</string>
-	<key>Open Keychain Access</key>
-	<string>Open Keychain Access</string>
 	<key>Open sign-in page</key>
 	<string>Open sign-in page</string>
 	<key>Open the %@ folder in Finder</key>
@@ -582,6 +578,8 @@
 	<string>Refreshing usage</string>
 	<key>Refreshing…</key>
 	<string>Refreshing…</string>
+	<key>Reload Configuration</key>
+	<string>Reload Configuration</string>
 	<key>Reload SSH configuration</key>
 	<string>Reload SSH configuration</string>
 	<key>Reload ~/.ssh/config</key>
@@ -664,12 +662,14 @@
 	<string>Save</string>
 	<key>Save Port Forward</key>
 	<string>Save Port Forward</string>
-	<key>Saved in Keychain</key>
-	<string>Saved in Keychain</string>
+	<key>Saved in the private secrets file</key>
+	<string>Saved in the private secrets file</string>
 	<key>Search Sidebar</key>
 	<string>Search Sidebar</string>
 	<key>Search connections and endpoints</key>
 	<string>Search connections and endpoints</string>
+	<key>Secrets File</key>
+	<string>Secrets File</string>
 	<key>Selected time</key>
 	<string>Selected time</string>
 	<key>Selected tokens</key>
@@ -724,14 +724,14 @@
 	<string>Test and create</string>
 	<key>The SSH port forward is missing</key>
 	<string>The SSH port forward is missing</string>
-	<key>The internal loopback key is generated from Keychain into the helper's private configuration.</key>
-	<string>The internal loopback key is generated from Keychain into the helper's private configuration.</string>
-	<key>The key is stored in Keychain and is never written to ModelMoor configuration.</key>
-	<string>The key is stored in Keychain and is never written to ModelMoor configuration.</string>
-	<key>The key is stored in Keychain and is never written to the ModelMoor configuration file.</key>
-	<string>The key is stored in Keychain and is never written to the ModelMoor configuration file.</string>
-	<key>The key named %@ will be removed from Keychain.</key>
-	<string>The key named %@ will be removed from Keychain.</string>
+	<key>The internal loopback key is generated from the private secrets file into the helper's private configuration.</key>
+	<string>The internal loopback key is generated from the private secrets file into the helper's private configuration.</string>
+	<key>The key is stored in the private secrets file and is never written to ModelMoor configuration.</key>
+	<string>The key is stored in the private secrets file and is never written to ModelMoor configuration.</string>
+	<key>The key is stored in the private secrets file and is never written to the ModelMoor configuration file.</key>
+	<string>The key is stored in the private secrets file and is never written to the ModelMoor configuration file.</string>
+	<key>The key named %@ will be removed from the private secrets file.</key>
+	<string>The key named %@ will be removed from the private secrets file.</string>
 	<key>The listener stays on loopback, so the forwarded port is not exposed to the LAN.</key>
 	<string>The listener stays on loopback, so the forwarded port is not exposed to the LAN.</string>
 	<key>The local port is allocated automatically and remains loopback-only.</key>
@@ -802,10 +802,10 @@
 	<string>Usage incomplete</string>
 	<key>Use %@</key>
 	<string>Use %@</string>
-	<key>Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.</key>
-	<string>Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.</string>
-	<key>Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.</key>
-	<string>Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.</string>
+	<key>Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.</key>
+	<string>Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.</string>
+	<key>Use a remote model over SSH or connect a direct HTTP(S) API. ModelMoor keeps transport details out of the normal workflow.</key>
+	<string>Use a remote model over SSH or connect a direct HTTP(S) API. ModelMoor keeps transport details out of the normal workflow.</string>
 	<key>Use for routing</key>
 	<string>Use for routing</string>
 	<key>Used By</key>

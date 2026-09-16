@@ -54,6 +54,12 @@ struct EndpointDetailView: View {
             synchronizeDirtyDraft()
         }
         .onChange(of: draft) { _, _ in synchronizeDirtyDraft() }
+        .onChange(of: original) { previous, _ in
+            if draft == previous {
+                reloadDraft()
+                synchronizeDirtyDraft()
+            }
+        }
         .onChange(of: dirtyDrafts.resolution) { _, resolution in
             guard resolution?.draftID == draftID else { return }
             reloadDraft()
@@ -135,7 +141,7 @@ struct EndpointDetailView: View {
         Section("Connection") {
             switch endpoint.source {
             case let .directHTTPS(origin):
-                LabeledContent("HTTPS origin", value: origin.absoluteString)
+                LabeledContent("HTTP(S) origin", value: origin.absoluteString)
                 if let url = model.endpointURL(endpoint) {
                     LabeledContent("Base URL") {
                         Text(url.absoluteString).font(.callout.monospaced()).textSelection(.enabled)
@@ -172,7 +178,7 @@ struct EndpointDetailView: View {
         Section("Authentication") {
             LabeledContent("Method", value: authenticationName(endpoint.authentication))
             if isManaged(endpoint) {
-                Text("The internal loopback key is generated from Keychain into the helper's private configuration.")
+                Text("The internal loopback key is generated from the private secrets file into the helper's private configuration.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if endpoint.authentication != .none {
@@ -313,11 +319,11 @@ struct EndpointDetailView: View {
     }
     private var deleteMessage: String {
         if original.map(model.isRecognizedLLMEndpoint) == false {
-            return "The saved service reference and its Keychain credential will be removed. The SSH port forward remains available on its connection."
+            return "The saved service reference and its file-backed credential will be removed. The SSH port forward remains available on its connection."
         }
         return routeCount == 0
-            ? "The endpoint and its Keychain credential will be removed."
-            : "This also removes \(routeCount) Unified API model entries and the endpoint's Keychain credential."
+            ? "The endpoint and its file-backed credential will be removed."
+            : "This also removes \(routeCount) Unified API model entries and the endpoint's file-backed credential."
     }
 
     private func reloadDraft() { draft = original }
@@ -344,7 +350,7 @@ struct EndpointDetailView: View {
 
     private func sourceSummary(_ endpoint: APIEndpointConfiguration) -> String {
         switch endpoint.source {
-        case let .directHTTPS(origin): "Direct HTTPS, \(origin.host ?? origin.absoluteString)"
+        case let .directHTTPS(origin): "Direct HTTP(S), \(origin.host ?? origin.absoluteString)"
         case .managedCLIProxy: "Managed subscription proxy on this Mac"
         case let .sshMapping(mappingID, _): "Remote over SSH, \(connectionForMapping(mappingID)?.name ?? "missing connection")"
         }
@@ -352,7 +358,7 @@ struct EndpointDetailView: View {
 
     private func sourceType(_ endpoint: APIEndpointConfiguration) -> String {
         switch endpoint.source {
-        case .directHTTPS: "Direct HTTPS API"
+        case .directHTTPS: "Direct HTTP(S) API"
         case .managedCLIProxy: "Managed subscription proxy"
         case .sshMapping: "Remote over SSH"
         }
@@ -419,7 +425,7 @@ struct EndpointTokenEditor: View {
             }
             Button("Cancel", role: .cancel) { keyPendingRemoval = nil }
         } message: { key in
-            Text("The key named \(key.name) will be removed from Keychain.")
+            Text("The key named \(key.name) will be removed from the private secrets file.")
         }
     }
 
@@ -447,7 +453,7 @@ struct EndpointTokenEditor: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(key.name)
-                Text(isSaved ? (isActive ? "In use, saved in Keychain" : "Saved in Keychain") : "API key not set")
+                Text(isSaved ? (isActive ? "In use, saved in the private secrets file" : "Saved in the private secrets file") : "API key not set")
                     .font(.caption)
                     .foregroundStyle(isSaved ? Color.secondary : Color.orange)
             }
@@ -496,7 +502,7 @@ private struct EndpointAPIKeyEditorSheet: View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(title).font(.title2.weight(.semibold))
-                Text("The key is stored in Keychain and is never written to ModelMoor configuration.")
+                Text("The key is stored in the private secrets file and is never written to ModelMoor configuration.")
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

@@ -27,7 +27,7 @@ if [[ -d /Applications/Xcode.app/Contents/Developer ]]; then
 fi
 export CLANG_MODULE_CACHE_PATH="$PROJECT_DIR/.build/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PROJECT_DIR/.build/module-cache"
-BUILD_OPTIONS=(--disable-sandbox --cache-path "$PROJECT_DIR/.build/cache")
+BUILD_OPTIONS=(--disable-sandbox --cache-path "$PROJECT_DIR/.build/cache" --build-system "${MODELMOOR_BUILD_SYSTEM:-native}")
 
 cd "$PROJECT_DIR"
 "$PROJECT_DIR/Scripts/generate-icons.sh"
@@ -83,23 +83,8 @@ xcrun actool "$PROJECT_DIR/Resources/Assets.xcassets" \
   --app-icon AppIcon \
   --output-partial-info-plist "$APP_OUTPUT_DIR/asset-info.plist"
 
-SIGN_IDENTITY="${MODELMOOR_CODE_SIGN_IDENTITY:-}"
-if [[ -z "$SIGN_IDENTITY" ]]; then
-  SIGN_IDENTITY="$(/usr/bin/security find-identity -v -p codesigning 2>/dev/null \
-    | awk -F'"' '/^[[:space:]]*[0-9]+\)/ { print $2; exit }')"
-fi
-if [[ -z "$SIGN_IDENTITY" ]]; then
-  SIGN_IDENTITY="-"
-  print -u2 "warning: no stable code-signing identity found; using ad-hoc signing"
-  print -u2 "warning: set MODELMOOR_CODE_SIGN_IDENTITY to keep Keychain access stable across builds"
-else
-  print "Signing with $SIGN_IDENTITY"
-fi
-
-# The standalone CLI and bundled helper do not need the app identity. Sign
-# them ad-hoc first, then use the Keychain-backed identity exactly once for the
-# outer app. Even when the user chooses one-time Allow instead of Always Allow,
-# one install can therefore produce at most one private-key password prompt.
+SIGN_IDENTITY="${MODELMOOR_CODE_SIGN_IDENTITY:--}"
+print "Signing with $SIGN_IDENTITY"
 codesign --force --sign - \
   "$CLI_BINARY" \
   "$APP_DIR/Contents/MacOS/CLIProxyAPI"

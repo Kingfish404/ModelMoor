@@ -42,7 +42,7 @@ final class LocalizationTests: XCTestCase {
             "Refresh Status",
             "Navigate",
             "Search Sidebar",
-            "Only direct HTTPS API endpoints can be duplicated."
+            "Only direct HTTP(S) API endpoints can be duplicated."
         ]
 
         for key in keys {

@@ -11,6 +11,7 @@ struct GatewayDetailView: View {
     @State private var keyToRotate: GatewayAPIKeyConfiguration?
     @State private var keyToDelete: GatewayAPIKeyConfiguration?
     @State private var budgetRoute: ModelRouteConfiguration?
+    @State private var aliasRoute: ModelRouteConfiguration?
 
     var body: some View {
         ScrollView {
@@ -28,6 +29,9 @@ struct GatewayDetailView: View {
             .padding(28)
         }
         .navigationTitle("Unified API")
+        .sheet(item: $aliasRoute) { route in
+            ModelAliasSheet(route: route).environmentObject(model)
+        }
         .sheet(item: $budgetRoute) { route in
             ModelBudgetSheet(route: route).environmentObject(model)
         }
@@ -236,6 +240,12 @@ struct GatewayDetailView: View {
                                 .labelStyle(.titleAndIcon)
                                 .foregroundStyle(route.enabled ? .green : .secondary)
                             HStack {
+                                Button { aliasRoute = route } label: {
+                                    Image(systemName: "pencil")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Edit Model Alias")
+                                .accessibilityLabel("Edit Model Alias")
                                 Button { budgetRoute = route } label: {
                                     Image(systemName: "slider.horizontal.3")
                                 }
@@ -368,7 +378,7 @@ private struct AddGatewayAPIKeySheet: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Add API key").font(.title2.weight(.semibold))
-                Text("Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.")
+                Text("Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.")
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

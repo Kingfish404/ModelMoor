@@ -21,23 +21,22 @@ struct AddUnifiedModelsSheet: View {
                     }
                 }
 
-                if availableModels.isEmpty {
+                if availableModelIDs.isEmpty {
                     ContentUnavailableView {
                         Label("No discovered models", systemImage: "cube.transparent")
                     } description: {
                         Text("Refresh the endpoint or enter an upstream model ID manually.")
                     }
                 } else {
-                    List(availableModels, selection: $selectedModels) { remoteModel in
+                    List(availableModelIDs, id: \.self) { modelID in
                         HStack {
-                            Toggle(remoteModel.id, isOn: selectionBinding(remoteModel.id))
+                            Toggle(modelID, isOn: selectionBinding(modelID))
                             Spacer()
-                            if selectedModels.contains(remoteModel.id) {
-                                TextField("Public name", text: publicNameBinding(remoteModel.id))
+                            if selectedModels.contains(modelID) {
+                                TextField("Public name", text: publicNameBinding(modelID))
                                     .frame(width: 220)
                             }
                         }
-                        .tag(remoteModel.id)
                     }
                     .frame(minHeight: 220)
                 }
@@ -48,7 +47,7 @@ struct AddUnifiedModelsSheet: View {
                         let value = manualModel.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !value.isEmpty else { return }
                         selectedModels.insert(value)
-                        publicNames[value] = value
+                        publicNames[value] = publicNames[value] ?? value
                         manualModel = ""
                     }
                     .disabled(manualModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -107,6 +106,10 @@ struct AddUnifiedModelsSheet: View {
         return model.inspections[endpointID]?.models ?? []
     }
 
+    private var availableModelIDs: [String] {
+        Set(availableModels.map(\.id)).union(publicNames.keys).sorted()
+    }
+
     private var addButtonTitle: String {
         selectedModels.count == 1 ? "Add 1 Model" : "Add \(selectedModels.count) Models"
     }
@@ -137,7 +140,6 @@ struct AddUnifiedModelsSheet: View {
                     publicNames[id] = publicNames[id] ?? id
                 } else {
                     selectedModels.remove(id)
-                    publicNames[id] = nil
                 }
             }
         )

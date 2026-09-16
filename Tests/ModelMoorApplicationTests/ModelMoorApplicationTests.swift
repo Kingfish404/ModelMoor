@@ -11,6 +11,41 @@ import XCTest
 import ModelMoorCore
 
 final class ModelMoorApplicationTests: XCTestCase {
+    func testReloadConfigurationImportsAliasWithoutRewritingDiskAndRejectsInvalidData() async throws {
+        let (session, directory) = try makeSession()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await session.load()
+        var configuration = await session.snapshot.configuration
+        let endpoint = APIEndpointConfiguration(
+            name: "Local", source: .directHTTPS(originURL: URL(string: "http://localhost:8080")!)
+        )
+        let route = ModelRouteConfiguration(publicModel: "old-alias", endpointID: endpoint.id, upstreamModel: "vendor-model")
+        configuration.endpoints.append(endpoint)
+        configuration.routes = [route]
+        configuration.gateway.enabled = false
+        try await session.saveConfiguration(configuration)
+        let profile = ModelMoorRuntimeProfile.make(
+            .development, homeDirectory: directory,
+            configurationHome: directory.appendingPathComponent("config", isDirectory: true)
+        )
+        configuration.routes[0].publicModel = "new-alias"
+        let editedData = try JSONEncoder().encode(configuration)
+        try editedData.write(to: profile.configurationURL)
+        try await session.reloadConfiguration()
+        let reloaded = await session.snapshot.configuration
+        XCTAssertEqual(reloaded.routes[0].publicModel, "new-alias")
+        XCTAssertEqual(reloaded.routes[0].upstreamModel, "vendor-model")
+        XCTAssertEqual(reloaded.routes[0].id, route.id)
+        XCTAssertEqual(try Data(contentsOf: profile.configurationURL), editedData)
+        try Data("invalid JSON".utf8).write(to: profile.configurationURL)
+        do {
+            try await session.reloadConfiguration()
+            XCTFail("Invalid configuration must not replace active state")
+        } catch {}
+        let unchanged = await session.snapshot.configuration
+        XCTAssertEqual(unchanged, reloaded)
+    }
+
     func testModelBudgetUsageReadsPersistedCalendarTotals() async throws {
         let (session, directory) = try makeSession()
         defer { try? FileManager.default.removeItem(at: directory) }

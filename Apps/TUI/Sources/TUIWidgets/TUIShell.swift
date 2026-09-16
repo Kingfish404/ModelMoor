@@ -37,7 +37,7 @@ public enum TUIShellParser {
       clear-filter         Clear the current list filter
       add ssh              Add an SSH connection
       add port             Add a local port mapping to an SSH connection
-      add api              Add a direct HTTPS API endpoint
+      add api              Add a direct HTTP(S) API endpoint
       subs                 Configure subscription sign-in and proxy port
       subs login <provider>
                            Start sign-in using codex, claude, antigravity, kimi, or xai

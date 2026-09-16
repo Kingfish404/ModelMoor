@@ -73,7 +73,7 @@ public struct AppSnapshot: Equatable, Sendable {
     public var sshTargets: [SSHHostTarget]
     public var isRefreshingSSHTargets: Bool
     /// IDs only: lets synchronous presentation code render credential state
-    /// without touching Keychain/Secret Service on the UI thread.
+    /// without accessing the secret store on the UI thread.
     public var availableEndpointAPIKeyIDs: Set<UUID>
     public var isLoaded: Bool
 

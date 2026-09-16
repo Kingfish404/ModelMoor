@@ -827,10 +827,10 @@ final class TUIApp: @unchecked Sendable {
     private func showAPIForm() {
         TUIFormDialog.request(
             "Add API endpoint",
-            message: "Direct endpoints must use an HTTPS origin, for example https://api.example.com.",
+            message: "Direct endpoints must use an HTTP(S) origin, for example https://api.example.com.",
             fields: [
                 TUIFormField("Name", "New API endpoint"),
-                TUIFormField("HTTPS origin", "https://api.example.com"),
+                TUIFormField("HTTP(S) origin", "https://api.example.com"),
                 TUIFormField("Base path", "/v1"),
                 TUIFormField("API key", isSecret: true)
             ]
@@ -843,7 +843,7 @@ final class TUIApp: @unchecked Sendable {
             guard !name.isEmpty,
                   let origin = URL(string: originText),
                   !secret.isEmpty || basePath.isEmpty == false else {
-                self.showError("Name, HTTPS origin, and base path are required.")
+                self.showError("Name, HTTP(S) origin, and base path are required.")
                 return
             }
             let endpointID = UUID()
@@ -872,7 +872,7 @@ final class TUIApp: @unchecked Sendable {
         let gateway = currentSnapshot.configuration.gateway
         TUIFormDialog.request(
             "Configure Unified API",
-            message: "The listener binds to loopback. API keys are generated and stored in the system keychain.",
+            message: "The listener binds to loopback. API keys are generated and stored in the private secrets file.",
             fields: [
                 TUIFormField("Enabled", gateway.enabled ? "yes" : "no"),
                 TUIFormField("Listen port", String(gateway.listenPort)),
@@ -1136,7 +1136,7 @@ final class TUIApp: @unchecked Sendable {
             "",
             "Text is read-only. Focus it with Tab or mouse; Ctrl-Space + arrows selects, Ctrl-C copies.",
             "Focused lists copy their selected row with Ctrl-C.",
-            "API keys are masked here and stored in the system keychain."
+            "API keys are masked here and stored in the private secrets file."
         ]
         settingsText.text = lines.joined(separator: "\n")
     }

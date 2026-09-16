@@ -33,7 +33,7 @@ This is useful for self-hosted vLLM, SGLang, Ollama, or other services that shou
 
 ### 2. Aggregate remote and commercial APIs locally
 
-Add models from SSH-hosted endpoints and direct HTTPS providers, then assign each one a stable public model name in the Unified API:
+Add models from SSH-hosted endpoints and direct HTTP(S) providers, then assign each one a stable public model name in the Unified API:
 
 ```text
 SSH-hosted APIs --+
@@ -41,7 +41,7 @@ SSH-hosted APIs --+
 Commercial APIs --+
 ```
 
-Local clients keep one base URL and one ModelMoor API key. ModelMoor routes each public model name to its exact upstream endpoint, replaces the local credential with that endpoint's Keychain credential, and transparently streams the response. It does not perform fallback, load balancing, or inference retries.
+Local clients keep one base URL and one ModelMoor API key. ModelMoor routes each public model name to its exact upstream endpoint, replaces the local credential with that endpoint's file-backed credential, and transparently streams the response. It does not perform fallback, load balancing, or inference retries.
 
 ### 3. Make the local Unified API available on a remote server
 
@@ -78,7 +78,7 @@ The Mac must keep ModelMoor and the SSH connection running. Both listeners remai
 - One Mooring uses one SSH process and carries multiple `ssh -L` and `ssh -R` mappings at once
 - Models SSH forwarding as a transport and API endpoints separately
 - Keeps non-LLM forwarded services in a collapsed **Others** sidebar group instead of reporting API warnings
-- Supports direct HTTPS OpenAI-compatible endpoints such as DeepSeek, with one Keychain secret per endpoint
+- Supports direct HTTP(S) OpenAI-compatible endpoints such as DeepSeek, with one file-backed secret per endpoint
 - Connects ChatGPT/Codex, Claude Code, Google Antigravity, Kimi, and xAI/Grok subscription accounts through a bundled, ModelMoor-managed CLIProxyAPI helper
 - Keeps that managed helper under the same single runtime-owner boundary as SSH and the Unified API, so a read-only GUI never launches a duplicate process while the CLI or TUI owns the runtime
 - Discovers OpenAI-compatible and Ollama models and reports endpoint health independently from SSH state
@@ -99,6 +99,10 @@ Open the ModelMoor main window and:
 4. Enable **Unified API**, then choose **Save and apply**.
 5. Keep **Require API key** on for protected access, then copy an enabled key from **API access**. Add separate keys for different clients when useful.
 
+In **Add Models**, select discovered models or enter an upstream model ID manually, then edit **Public name** to choose the alias clients will request. Use the pencil button beside an existing Unified API model to change its alias without changing its upstream model, route identity, or budgets. For example, clients can request `deepseek-fast` while ModelMoor forwards `deepseek-v4-flash` upstream. The model list exposes the public alias; clients using an old alias must update after it is renamed.
+
+After editing the local configuration file, use **Reload Configuration** in the main window toolbar. ModelMoor reads the file and refreshes SSH connections, managed subscriptions, and Unified API routing without writing the previous in-memory configuration back to disk. Existing connection requests are retained for tunnels that still exist. Unapplied form edits trigger the existing apply/discard/cancel prompt; choose discard to load the external file without saving the form first. An invalid configuration leaves the active configuration unchanged and displays an error.
+
 Any OpenAI-compatible local client can then use:
 
 ```text
@@ -113,7 +117,7 @@ curl http://127.0.0.1:17777/v1/models \
   -H "Authorization: Bearer $MODELMOOR_GATEWAY_TOKEN"
 ```
 
-Send a streaming request. ModelMoor rewrites only the top-level `model`, replaces the local token with the selected endpoint's Keychain credential, and forwards the upstream response:
+Send a streaming request. ModelMoor rewrites only the top-level `model`, replaces the local token with the selected endpoint's file-backed credential, and forwards the upstream response:
 
 ```bash
 curl http://127.0.0.1:17777/v1/chat/completions \
@@ -126,7 +130,7 @@ curl http://127.0.0.1:17777/v1/chat/completions \
 
 Open **Subscription** in the sidebar, then connect ChatGPT/Codex, Claude Code, Google Antigravity, Kimi, or xAI/Grok. Sign-in happens in the provider's browser or device flow; ModelMoor never receives the account password. Add multiple accounts for the same provider when needed, and disable individual accounts without removing their credentials. After models are discovered, configure the models to expose from **Unified API**.
 
-ModelMoor starts the bundled CLIProxyAPI helper only on loopback, gives it a private internal API key and management password from Keychain, monitors its process, and stops it with the app. The public client still uses only the ModelMoor Unified API URL and its ModelMoor API key.
+ModelMoor starts the bundled CLIProxyAPI helper only on loopback, gives it a private internal API key and management password from the private secrets file, monitors its process, and stops it with the app. The public client still uses only the ModelMoor Unified API URL and its ModelMoor API key.
 
 ## Requirements
 
@@ -145,7 +149,7 @@ the app build.
 make run
 ```
 
-`make run` builds and opens the isolated **ModelMoor Dev** app. Its settings, Keychain items, ports, SSH runtime, usage history, and managed CLIProxyAPI data are separate from an installed production version. Use `make app` only when assembling the production-profile app at `.build/app/ModelMoor.app`.
+`make run` builds and opens the isolated **ModelMoor Dev** app. Its settings, secret files, ports, SSH runtime, usage history, and managed CLIProxyAPI data are separate from an installed production version. Use `make app` only when assembling the production-profile app at `.build/app/ModelMoor.app`.
 
 The production build also produces the release CLI and prints its path when done. After moving the production app to `/Applications`, you can enable start at login from the Settings item at the bottom of the ModelMoor sidebar, or press Command-,.
 
@@ -240,18 +244,26 @@ Non-secret configuration is stored in XDG-style files so it can be inspected, ba
 ~/.config/modelmoor/config.dev.json  # development
 ```
 
-`XDG_CONFIG_HOME` replaces `~/.config` when it contains an absolute path. On first launch after upgrading, ModelMoor copies the matching legacy `Application Support` configuration into the new location and leaves the old file unchanged. Copying a configuration between profiles does not copy its Keychain credentials.
+`XDG_CONFIG_HOME` replaces `~/.config` when it contains an absolute path. On first launch after upgrading, ModelMoor copies the matching legacy `Application Support` configuration into the new location and leaves the old file unchanged. Copying a configuration between profiles does not copy its file-backed credentials.
 
 ## Security Boundaries
+
+On macOS, endpoint API keys, Unified API keys, and CLIProxyAPI internal credentials are stored in `~/.config/modelmoor/secrets.json`; development builds use `~/.config/modelmoor-dev/secrets.json`. The containing directory is restricted to `0700` and files to `0600`. `XDG_CONFIG_HOME` overrides `~/.config`; `MODELMOOR_SECRETS_FILE` overrides the full secrets path. `MODELMOOR_CONFIG` changes only the ordinary configuration path, not the secrets path. An explicit secrets override can intentionally share credentials between profiles, so use separate paths for isolation.
+
+The file is UTF-8 JSON with `schemaVersion: 1` and a `secrets` object mapping account identifiers to secret strings. Writes are atomic and protected by a sibling `secrets.json.lock` file. Files with unsafe permissions, a different owner, or a symbolic-link type are rejected. This is plaintext storage protected by filesystem permissions, not encryption: other processes running as your user and administrators can read it. Keep it out of source control, shared folders, and unencrypted backups; configuration exports do not include it.
+
+On macOS, version 0.5.0 uses only the private JSON secrets file. Historical Keychain credentials and migration settings are ignored: no Keychain reads, writes, or imports occur. Existing file credentials remain valid. Re-enter any upstream API keys that exist only in Keychain; copy the current Unified API key to clients if their old key is absent from the file. Old Keychain items are not deleted. Linux retains its explicit file-backend opt-in and existing `~/.local/share/modelmoor/secrets.json` path (or `$XDG_DATA_HOME/modelmoor/secrets.json`).
+
+Direct API endpoints accept both HTTP and HTTPS, including custom ports and base paths. HTTP sends credentials and traffic without encryption; use it only on trusted networks or loopback. Existing configurations retain the `directHTTPS` source identifier for compatibility, even for an HTTP URL.
 
 - SSH passwords, private keys, ProxyJump, and the agent are managed by the system OpenSSH.
 - `BatchMode=yes` prevents background connections from prompting for a password.
 - Local and remote listener addresses only accept `127.0.0.1` or `localhost`.
 - `-R 0.0.0.0:...` and GatewayPorts are not supported yet, to avoid exposing local services to the remote network.
-- Endpoint credentials and Unified API key values are stored only in the current user's macOS Keychain. Configuration contains only key names, identifiers, and enabled states.
-- The CLIProxyAPI internal API key and management password are generated from Keychain. The helper requires its API key in configuration, so ModelMoor materializes that loopback-only key into a mode-0600 generated config while the management password remains environment-only. OAuth access and refresh tokens for subscription providers are file-backed because CLIProxyAPI requires auth files; they live under `~/Library/Application Support/ModelMoor/CLIProxyAPI/auths` inside directories restricted to the current user. Development builds use the separate `ModelMoor Dev` application-data directory.
+- Endpoint credentials and Unified API key values are stored only in an owner-only secrets file. Configuration contains only key names, identifiers, and enabled states.
+- The CLIProxyAPI internal API key and management password are generated from the private secrets file. The helper requires its API key in configuration, so ModelMoor materializes that loopback-only key into a mode-0600 generated config while the management password remains environment-only. OAuth access and refresh tokens for subscription providers are file-backed because CLIProxyAPI requires auth files; they live under `~/Library/Application Support/ModelMoor/CLIProxyAPI/auths` inside directories restricted to the current user. Development builds use the separate `ModelMoor Dev` application-data directory.
 - The managed CLIProxyAPI listener and management API bind only to loopback. Remote management is disabled, its control panel is disabled, request logging and upstream retries are disabled, and the management password is passed in memory through the child-process environment rather than written into configuration.
-- The Unified API binds only `127.0.0.1`. Bearer authentication is enabled by default, supports multiple independently enabled keys, and can be turned off with an in-app warning. Newly created and rotated keys use the familiar `sk-` prefix; an existing legacy Gateway Token remains valid as the Default key until the user rotates it. Client credentials are removed before ModelMoor injects only the selected endpoint credential.
+- The Unified API binds only `127.0.0.1`. Bearer authentication is enabled by default, supports multiple independently enabled keys, and can be turned off with an in-app warning. Newly created and rotated keys use the familiar `sk-` prefix. Keys are stored only in the private secrets file. Client credentials are removed before ModelMoor injects only the selected endpoint credential.
 - API inspection only performs GET probes. The Gateway never logs request or response bodies and never retries or falls back to another paid endpoint.
 - Usage history stores only a timestamp, total token count, and internal route/endpoint identifiers. It is based on upstream `usage` fields, so a streaming response is counted only when the upstream includes usage data.
 - Gateway requests are limited to 16 MiB and 64 active requests; file, image/audio upload, CORS, and native Anthropic/Gemini protocol translation are intentionally out of scope.

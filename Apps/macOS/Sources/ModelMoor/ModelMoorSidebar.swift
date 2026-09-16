@@ -345,7 +345,7 @@ struct ModelMoorSidebar: View {
         connectionNamesByMappingID: [UUID: String]
     ) -> String {
         switch endpoint.source {
-        case let .directHTTPS(origin): return origin.host ?? "Direct HTTPS"
+        case let .directHTTPS(origin): return origin.host ?? "Direct HTTP(S)"
         case .managedCLIProxy: return "Subscription accounts"
         case let .sshMapping(mappingID, _):
             if let connectionName = connectionNamesByMappingID[mappingID] {

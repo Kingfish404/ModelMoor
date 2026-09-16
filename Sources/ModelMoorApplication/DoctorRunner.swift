@@ -200,7 +200,7 @@ public struct DoctorRunner: Sendable {
                 severity: .fail,
                 check: "secret-store",
                 detail: error.localizedDescription,
-                suggestion: "Enable a secret backend before storing API keys (macOS: Keychain; Linux: MODELMOOR_SECRET_BACKEND=file)."
+                suggestion: "Check the private secrets file permissions (0600); on Linux enable MODELMOOR_SECRET_BACKEND=file."
             ))
         }
 

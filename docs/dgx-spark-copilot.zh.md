@@ -9,10 +9,10 @@ DGX Spark (SGLang :8888)
         |  SSH（系统 OpenSSH，ModelMoor 管理）
         v
 macOS 本地端口（如 18888）
-        |                         DeepSeek / 其他 HTTPS API + Keychain key
+        |                         DeepSeek / 其他 HTTPS API + file-backed key
         +-----------------------------+
                                       v
-ModelMoor Local Gateway（http://127.0.0.1:17777/v1）
+ModelMoor Unified API（http://127.0.0.1:17777/v1）
         |  一个 URL、一个本地 bearer token、多个稳定模型别名
         v
 VS Code Copilot（chatLanguageModels.json 自定义端点）
@@ -96,18 +96,18 @@ curl http://127.0.0.1:18888/v1/models
 # 应返回包含 "qwen3.8-27b-sglang" 的模型列表
 ```
 
-> 这条 `18888` URL 仍可直接使用，但每增加一台 remote，客户端就要保存一个 URL。下一步用 Local Gateway 把它们统一到固定的 `17777`。
+> 这条 `18888` URL 仍可直接使用，但每增加一台 remote，客户端就要保存一个 URL。下一步用 Unified API 把它们统一到固定的 `17777`。
 
 ## 4. 加入统一 API
 
 在 ModelMoor 主窗口中：
 
 1. 在 **API Endpoints** 刷新刚创建的 DGX endpoint，确认能看到 `qwen3.8-27b-sglang`。
-2. 在 **Unified API / Local Gateway** 添加一条模型映射：公开模型名可仍用 `qwen3.8-27b-sglang`，source endpoint 选择 DGX，upstream model 填同名模型。
-3. 启用 Local Gateway，保存并应用。
+2. 在 **Unified API** 添加一条模型映射：公开模型名可仍用 `qwen3.8-27b-sglang`，source endpoint 选择 DGX，upstream model 填同名模型。
+3. 启用 Unified API，保存并应用。
 4. 默认保持 **Require API key** 开启，复制 Unified API URL 和一个已启用的 API key。默认 URL 是 `http://127.0.0.1:17777/v1`。也可以为不同客户端分别创建、启用或停用 key；若明确关闭鉴权，客户端无需填写 key。
 
-以后添加 DeepSeek 时，使用 DeepSeek preset 保存 API key，再为选中的 DeepSeek 模型增加映射即可。商业 key 按 endpoint 分开保存在 macOS Keychain；客户端只拿到 ModelMoor 的 Unified API key。
+以后添加 DeepSeek 时，使用 DeepSeek preset 保存 API key，再为选中的 DeepSeek 模型增加映射即可。商业 key 按 endpoint 分开保存在 owner-only secrets file；客户端只拿到 ModelMoor 的 Unified API key。
 
 验证统一模型列表：
 
@@ -179,7 +179,7 @@ curl http://127.0.0.1:17777/v1/models \
 ]
 ```
 
-如果确实需要 SGLang 的原生 Anthropic-compatible `/v1/messages`，请直接使用 `18888` endpoint；首版 Local Gateway 的稳定契约只覆盖 OpenAI-compatible JSON/SSE。
+如果确实需要 SGLang 的原生 Anthropic-compatible `/v1/messages`，请直接使用 `18888` endpoint；Unified API 的稳定契约只覆盖 OpenAI-compatible JSON/SSE，不做协议转换。
 
 保存后重启 VS Code（或在 Copilot 模型选择器中刷新），模型列表里应出现 **DGXSpark -> Qwen 3.8 27B SGLang**。
 
@@ -200,11 +200,11 @@ curl http://127.0.0.1:17777/v1/models \
 
 ## 常见问题
 
-- **连接被拒绝 / 超时**：依次检查 1) DGX 上 SGLang 是否就绪；2) ModelMoor 的 SSH connection 是否已连接；3) Local Gateway 是否 ready；4) 客户端是否使用 Gateway URL。
+- **连接被拒绝 / 超时**：依次检查 1) DGX 上 SGLang 是否就绪；2) ModelMoor 的 SSH connection 是否已连接；3) Unified API 是否 ready；4) 客户端是否使用 Unified API URL。
 - **401**：Require API key 开启时，客户端必须使用一个已启用的 Unified API key；不要填 DGX 占位 key，也不要填 DeepSeek key。
 - **模型返回 404**：请求中的 `model` 必须等于 Unified API 中配置的公开模型名。
 - **SSH 认证失败**：ModelMoor 使用 `BatchMode=yes`，必须配置好公钥免密登录；密码登录不可用。
-- **本地端口被占用**：SSH mapping 的 `18888` 或 Gateway 的 `17777` 都可能冲突；只修改发生冲突的端口。客户端始终跟随 Gateway URL。
+- **本地端口被占用**：SSH mapping 的 `18888` 或 Unified API 的 `17777` 都可能冲突；只修改发生冲突的端口。客户端始终跟随 Unified API URL。
 - **首次响应慢**：冷启动后首个长 prefill 约 13 s（Triton 内核预热），之后约 8 s，属正常现象。
 - **上下文超限**：默认 262K 上下文；长会话报 400 时，缩短上下文或在 DGX 上用 `YARN=1` + `CONTEXT_LENGTH` 扩容（仅 MTP 引擎），并同步调大 `maxInputTokens`。
 - **引擎选择**：代码 / agent / 日常对话用 DSpark（`./start-dspark.sh`，代码约 51.5 tok/s）；长文写作用 MTP（`./start.sh`，长文约 24.1 tok/s）。切换需 `./stop.sh` 后重启另一引擎。

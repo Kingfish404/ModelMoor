@@ -38,6 +38,7 @@ public enum SecretStoreSupport {
 /// API keys, Unified API keys and helper credentials; secrets never enter
 /// configuration files, snapshots or logs.
 public protocol ModelMoorSecretStore: EndpointSecretStore {
+    func prepareForUse() throws
     /// Reads a secret by account name. Missing secrets return nil.
     func token(account: String) throws -> String?
     /// Stores or deletes (nil/empty) a secret by account name.
@@ -48,6 +49,8 @@ public protocol ModelMoorSecretStore: EndpointSecretStore {
 }
 
 public extension ModelMoorSecretStore {
+    func prepareForUse() throws {}
+
     func token(for endpointID: UUID) throws -> String? {
         try token(account: SecretStoreSupport.endpointAccount(for: endpointID))
     }
@@ -177,7 +180,7 @@ public struct UnavailableSecretStore: Sendable, ModelMoorSecretStore {
     }
 }
 
-/// Selects the platform secret store. macOS uses the Keychain. Linux uses the
+/// Selects the platform secret store. macOS uses a private JSON file. Linux uses the
 /// explicit headless file backend only when the user opts in via
 /// `MODELMOOR_SECRET_BACKEND=file`; otherwise resolution fails with guidance
 /// instead of silently downgrading to plaintext storage. A Secret Service
@@ -191,7 +194,7 @@ public enum SecretStoreResolver {
     /// on this platform (used by diagnostics).
     public static var backendDescription: String {
         #if canImport(Security)
-        return "macOS Keychain"
+        return "owner-only JSON file (0600)"
         #else
         return "headless file backend (explicit \(backendEnvironmentKey)=file opt-in)"
         #endif
@@ -202,10 +205,7 @@ public enum SecretStoreResolver {
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> any ModelMoorSecretStore {
         #if canImport(Security)
-        return KeychainTokenStore(
-            service: profile.secretService,
-            fallbackServices: profile.legacySecretServices
-        )
+        return HeadlessFileSecretStore(fileURL: defaultSecretsFileURL(profile: profile, environment: environment))
         #else
         guard let backend = environment[backendEnvironmentKey]?.trimmingCharacters(in: .whitespacesAndNewlines),
               !backend.isEmpty else {
@@ -222,18 +222,25 @@ public enum SecretStoreResolver {
         #endif
     }
 
-    /// Default secrets file location for the Linux headless backend:
-    /// `$MODELMOOR_SECRETS_FILE` > `$XDG_DATA_HOME/modelmoor/secrets.json` >
-    /// `~/.local/share/modelmoor/secrets.json`.
+    /// Explicit file overrides take precedence. macOS uses XDG config home
+    /// with separate modelmoor/modelmoor-dev directories; Linux retains its
+    /// existing XDG data-home location.
     public static func defaultSecretsFileURL(
+        profile: ModelMoorRuntimeProfile = .current,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
         if let override = environment[secretsFileEnvironmentKey], !override.isEmpty {
             return URL(fileURLWithPath: NSString(string: override).expandingTildeInPath)
         }
+        #if os(macOS)
+        return PlatformPaths.configHome(environment: environment, homeDirectory: homeDirectory)
+            .appendingPathComponent(profile.isDevelopment ? "modelmoor-dev" : "modelmoor", isDirectory: true)
+            .appendingPathComponent("secrets.json")
+        #else
         return PlatformPaths.dataHome(environment: environment, homeDirectory: homeDirectory)
             .appendingPathComponent("modelmoor", isDirectory: true)
             .appendingPathComponent("secrets.json")
+        #endif
     }
 }

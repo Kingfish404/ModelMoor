@@ -58,12 +58,12 @@ struct AddEndpointFlow: View {
             Text("Where is the API running?").font(.headline)
             Picker("Source", selection: $source) {
                 Label("Remote over SSH", systemImage: "network").tag(EndpointSourceChoice.ssh)
-                Label("Direct HTTPS API", systemImage: "lock.shield").tag(EndpointSourceChoice.direct)
+                Label("Direct HTTP(S) API", systemImage: "globe").tag(EndpointSourceChoice.direct)
             }
             .pickerStyle(.radioGroup)
             Text(source == .ssh
                  ? "ModelMoor creates a loopback port forward and keeps the SSH connection available in the background."
-                 : "Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.")
+                 : "Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -110,12 +110,12 @@ struct AddEndpointFlow: View {
             } else {
                 Section("Direct Connection") {
                     TextField(
-                        "HTTPS base URL",
+                        "HTTP(S) base URL",
                         text: $baseURL,
                         prompt: Text(verbatim: "https://api.example.com/v1")
                     )
                     SecureField(preset == .deepSeek ? "DeepSeek API key" : "API key, optional", text: $token)
-                    Text("The key is stored in Keychain and is never written to the ModelMoor configuration file.")
+                    Text("The key is stored in the private secrets file and is never written to the ModelMoor configuration file.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -214,7 +214,7 @@ struct AddEndpointFlow: View {
 
     private var detailsAreValid: Bool {
         if source == .ssh { return !sshHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...65_535).contains(remotePort) }
-        let validURL = baseURL.lowercased().hasPrefix("https://")
+        let validURL = (try? EndpointURLResolver.parseDirectBaseURL(baseURL)) != nil
         return validURL && (preset != .deepSeek || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 

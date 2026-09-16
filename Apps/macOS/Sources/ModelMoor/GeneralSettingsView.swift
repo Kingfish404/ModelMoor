@@ -68,7 +68,12 @@ struct GeneralSettingsView: View {
                     directoryURL: model.runtimeProfile.preferencesURL.deletingLastPathComponent()
                 )
 
-                keychainRow
+                persistenceRow(
+                    title: AppLocalization.string("Secrets File"),
+                    detail: AppLocalization.string("API keys and management passwords are stored in a private JSON file (0600)."),
+                    url: SecretStoreResolver.defaultSecretsFileURL(profile: model.runtimeProfile),
+                    directoryURL: SecretStoreResolver.defaultSecretsFileURL(profile: model.runtimeProfile).deletingLastPathComponent()
+                )
             }
 
             Section("Software Updates") {
@@ -136,43 +141,7 @@ struct GeneralSettingsView: View {
         .padding(.vertical, 2)
     }
 
-    private var keychainRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Keychain Secrets")
-                Spacer()
-                Button {
-                    model.openKeychainAccess()
-                } label: {
-                    Label("Open Keychain Access", systemImage: "key")
-                }
-                .help("Open Keychain Access")
-            }
-            Text(keychainDetail)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Text(keychainServices)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-        }
-        .padding(.vertical, 2)
-    }
-
     private func displayPath(_ url: URL) -> String {
         NSString(string: url.path).abbreviatingWithTildeInPath
-    }
-
-    private var keychainDetail: String {
-        guard !model.runtimeProfile.legacySecretServices.isEmpty else {
-            return AppLocalization.string("API keys and management passwords are stored by macOS, not in a ModelMoor file.")
-        }
-        return AppLocalization.string("API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.")
-    }
-
-    private var keychainServices: String {
-        ([model.runtimeProfile.secretService] + model.runtimeProfile.legacySecretServices)
-            .joined(separator: "\n")
     }
 }

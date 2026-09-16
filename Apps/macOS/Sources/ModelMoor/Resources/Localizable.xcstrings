@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Edit Model Alias": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "编辑模型别名" } } } },
+    "Reload Configuration": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重新加载配置" } } } },
     "Model budgets": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "模型预算" } } } },
     "Budget period": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "预算周期" } } } },
     "Budget paused": { "extractionState": "manual", "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "预算已暂停" } } } },
@@ -293,24 +295,13 @@
         }
       }
     },
-    "API keys and management passwords are stored by macOS, not in a ModelMoor file.": {
+    "API keys and management passwords are stored in a private JSON file (0600).": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "API 密钥和管理密码由 macOS 保存，不会写入 ModelMoor 文件。"
-          }
-        }
-      }
-    },
-    "API keys and management passwords are stored by macOS. Legacy services are read only for upgrade compatibility.": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "API 密钥和管理密码由 macOS 保存。旧版服务仅用于升级兼容性读取。"
+            "value": "API 密钥和管理密码存储在私有 JSON 文件中（权限 0600）。"
           }
         }
       }
@@ -1382,17 +1373,6 @@
       },
       "extractionState": "manual"
     },
-    "Current selection is hidden by search": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前选择已被搜索隐藏"
-          }
-        }
-      }
-    },
     "Current Version": {
       "extractionState": "manual",
       "localizations": {
@@ -1400,6 +1380,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前版本"
+          }
+        }
+      }
+    },
+    "Current selection is hidden by search": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前选择已被搜索隐藏"
           }
         }
       }
@@ -1558,12 +1549,12 @@
       },
       "extractionState": "manual"
     },
-    "Direct HTTPS API": {
+    "Direct HTTP(S) API": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "直接 HTTPS API"
+            "value": "直连 HTTP(S) API"
           }
         }
       },
@@ -1899,34 +1890,34 @@
       },
       "extractionState": "manual"
     },
-    "Give the key a client or device name. The generated value is stored in Keychain and copied to the pasteboard.": {
+    "Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "为密钥指定客户端或设备名称。生成的值将存入钥匙串并复制到剪贴板。"
+            "value": "为密钥指定客户端或设备名称。生成的值将存入私有密钥文件并复制到剪贴板。"
           }
         }
       },
       "extractionState": "manual"
     },
-    "HTTPS base URL": {
+    "HTTP(S) base URL": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "HTTPS 基础 URL"
+            "value": "HTTP(S) 基础 URL"
           }
         }
       },
       "extractionState": "manual"
     },
-    "HTTPS origin": {
+    "HTTP(S) origin": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "HTTPS 源站"
+            "value": "HTTP(S) 源站"
           }
         }
       },
@@ -1976,12 +1967,12 @@
         }
       }
     },
-    "In use, saved in Keychain": {
+    "In use, saved in the private secrets file": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在使用，已存入钥匙串"
+            "value": "正在使用，已存入私有密钥文件"
           }
         }
       },
@@ -2030,17 +2021,6 @@
         }
       },
       "extractionState": "manual"
-    },
-    "Keychain Secrets": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "钥匙串机密"
-          }
-        }
-      }
     },
     "Last checked": {
       "localizations": {
@@ -2746,13 +2726,13 @@
       },
       "extractionState": "manual"
     },
-    "Only direct HTTPS API endpoints can be duplicated.": {
+    "Only direct HTTP(S) API endpoints can be duplicated.": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "只能复制用户创建的直连 HTTPS API 端点。"
+            "value": "只能复制用户创建的直连 HTTP(S) API 端点。"
           }
         }
       }
@@ -2775,17 +2755,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开文件夹"
-          }
-        }
-      }
-    },
-    "Open Keychain Access": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "打开钥匙串访问"
           }
         }
       }
@@ -3544,16 +3513,27 @@
       },
       "extractionState": "manual"
     },
-    "Saved in Keychain": {
+    "Saved in the private secrets file": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已存入钥匙串"
+            "value": "已存入私有密钥文件"
           }
         }
       },
       "extractionState": "manual"
+    },
+    "Search Sidebar": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索侧边栏"
+          }
+        }
+      }
     },
     "Search connections and endpoints": {
       "extractionState": "manual",
@@ -3566,13 +3546,13 @@
         }
       }
     },
-    "Search Sidebar": {
+    "Secrets File": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜索侧边栏"
+            "value": "密钥文件"
           }
         }
       }
@@ -3874,45 +3854,45 @@
       },
       "extractionState": "manual"
     },
-    "The internal loopback key is generated from Keychain into the helper's private configuration.": {
+    "The internal loopback key is generated from the private secrets file into the helper's private configuration.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "内部回环密钥由钥匙串生成到辅助程序的私有配置中。"
+            "value": "内部回环密钥由私有密钥文件生成到辅助程序的私有配置中。"
           }
         }
       },
       "extractionState": "manual"
     },
-    "The key is stored in Keychain and is never written to ModelMoor configuration.": {
+    "The key is stored in the private secrets file and is never written to ModelMoor configuration.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "密钥存储在钥匙串中，绝不会写入 ModelMoor 配置。"
+            "value": "密钥存储在私有密钥文件中，绝不会写入 ModelMoor 配置。"
           }
         }
       },
       "extractionState": "manual"
     },
-    "The key is stored in Keychain and is never written to the ModelMoor configuration file.": {
+    "The key is stored in the private secrets file and is never written to the ModelMoor configuration file.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "密钥存储在钥匙串中，绝不会写入 ModelMoor 配置文件。"
+            "value": "密钥存储在私有密钥文件中，绝不会写入 ModelMoor 配置文件。"
           }
         }
       },
       "extractionState": "manual"
     },
-    "The key named %@ will be removed from Keychain.": {
+    "The key named %@ will be removed from the private secrets file.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "名为 %@ 的密钥将从钥匙串中移除。"
+            "value": "名为 %@ 的密钥将从私有密钥文件中移除。"
           }
         }
       },
@@ -4248,24 +4228,24 @@
       },
       "extractionState": "manual"
     },
-    "Use a commercial or self-hosted HTTPS endpoint that this Mac can reach directly.": {
+    "Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "使用此 Mac 可直接访问的商业或自托管 HTTPS 端点。"
+            "value": "使用此 Mac 可直接访问的商业或自托管 HTTP 或 HTTPS 端点。"
           }
         }
       },
       "extractionState": "manual"
     },
-    "Use a remote model over SSH or connect a direct HTTPS API. ModelMoor keeps transport details out of the normal workflow.": {
+    "Use a remote model over SSH or connect a direct HTTP(S) API. ModelMoor keeps transport details out of the normal workflow.": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "通过 SSH 使用远程模型，或连接直连 HTTPS API。ModelMoor 会将传输细节与日常工作流分离。"
+            "value": "通过 SSH 使用远程模型，或连接直连 HTTP(S) API。ModelMoor 会将传输细节与日常工作流分离。"
           }
         }
       }

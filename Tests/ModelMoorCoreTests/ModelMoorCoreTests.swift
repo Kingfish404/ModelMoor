@@ -111,6 +111,8 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(try store.token(for: endpointID), "sk-test-secret")
         let attributes = try FileManager.default.attributesOfItem(atPath: store.fileURL.path)
         XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue ?? -1, 0o600)
+        let directoryAttributes = try FileManager.default.attributesOfItem(atPath: directory.path)
+        XCTAssertEqual((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue ?? -1, 0o700)
         try store.setToken(nil, for: endpointID)
         XCTAssertNil(try store.token(for: endpointID))
     }
@@ -130,9 +132,61 @@ final class ModelMoorCoreTests: XCTestCase {
         }
     }
 
+    func testFileStoreIgnoresLegacyMigrationMetadata() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = HeadlessFileSecretStore(fileURL: directory.appendingPathComponent("secrets.json"))
+        try store.setToken("new", account: "existing")
+        let data = Data(#"{"schemaVersion":1,"secrets":{"existing":"new"},"migratedKeychainServices":["production"]}"#.utf8)
+        try data.write(to: store.fileURL)
+        XCTAssertEqual(try store.token(account: "existing"), "new")
+        XCTAssertNil(try store.token(account: "endpoint"))
+        try store.setToken(nil, account: "existing")
+        let reopened = HeadlessFileSecretStore(fileURL: store.fileURL)
+        XCTAssertNil(try reopened.token(account: "existing"))
+    }
+
+    func testDirectHTTPBaseURLPreservesPortAndPath() throws {
+        let parsed = try EndpointURLResolver.parseDirectBaseURL("http://192.168.1.20:8080/v1/")
+        XCTAssertEqual(parsed.origin.absoluteString, "http://192.168.1.20:8080")
+        XCTAssertEqual(parsed.basePath, "/v1")
+        let endpoint = APIEndpointConfiguration(name: "LAN", source: .directHTTPS(originURL: parsed.origin), basePath: parsed.basePath)
+        XCTAssertEqual(try EndpointURLResolver.resolve(endpoint, mappings: [:]).absoluteString, "http://192.168.1.20:8080/v1")
+        for invalid in ["ftp://example.com/v1", "http://user:pass@example.com/v1", "http://example.com/v1?key=secret", "http://example.com/v1#fragment"] {
+            XCTAssertThrowsError(try EndpointURLResolver.parseDirectBaseURL(invalid))
+        }
+    }
+
+    func testFileSecretStoreRejectsSymlinksAndPreservesOtherAccounts() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("secrets.json")
+        let store = HeadlessFileSecretStore(fileURL: fileURL)
+        try store.setToken("first", account: "first")
+        try HeadlessFileSecretStore(fileURL: fileURL).setToken("second", account: "second")
+        XCTAssertEqual(try store.token(account: "first"), "first")
+        XCTAssertEqual(try store.token(account: "second"), "second")
+        let link = directory.appendingPathComponent("link.json")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: fileURL)
+        XCTAssertThrowsError(try HeadlessFileSecretStore(fileURL: link).token(account: "first"))
+        XCTAssertThrowsError(try HeadlessFileSecretStore(fileURL: link).setToken("changed", account: "first"))
+        XCTAssertEqual(try store.token(account: "first"), "first")
+    }
+
     func testSecretStoreResolverRequiresExplicitOptInOnLinux() throws {
         #if canImport(Security)
-        XCTAssertNoThrow(try SecretStoreResolver.defaultStore())
+        let home = URL(fileURLWithPath: "/test-home", isDirectory: true)
+        let production = ModelMoorRuntimeProfile.make(.production, homeDirectory: home)
+        let development = ModelMoorRuntimeProfile.make(.development, homeDirectory: home)
+        XCTAssertTrue(try SecretStoreResolver.defaultStore(environment: [:]) is HeadlessFileSecretStore)
+        XCTAssertEqual(SecretStoreResolver.defaultSecretsFileURL(profile: production, environment: [:], homeDirectory: home).path,
+                       "/test-home/.config/modelmoor/secrets.json")
+        XCTAssertEqual(SecretStoreResolver.defaultSecretsFileURL(profile: development, environment: [:], homeDirectory: home).path,
+                       "/test-home/.config/modelmoor-dev/secrets.json")
+        XCTAssertEqual(SecretStoreResolver.defaultSecretsFileURL(profile: development, environment: ["XDG_CONFIG_HOME": "/custom-config"], homeDirectory: home).path,
+                       "/custom-config/modelmoor-dev/secrets.json")
+        XCTAssertEqual(SecretStoreResolver.defaultSecretsFileURL(environment: ["MODELMOOR_SECRETS_FILE": "/custom/secrets.json"], homeDirectory: home).path,
+                       "/custom/secrets.json")
         #else
         XCTAssertThrowsError(try SecretStoreResolver.defaultStore(environment: [:])) { error in
             guard case SecretStoreError.unavailable = error else {
@@ -993,7 +1047,7 @@ final class ModelMoorCoreTests: XCTestCase {
             try EndpointURLResolver.resolve(endpoint, mappings: [:]).absoluteString,
             "https://api.example.com/openai/v1"
         )
-        XCTAssertThrowsError(try EndpointURLResolver.parseDirectBaseURL("http://api.example.com/v1"))
+        XCTAssertNoThrow(try EndpointURLResolver.parseDirectBaseURL("http://api.example.com/v1"))
     }
 
     func testManagedCLIProxyEndpointIsRestrictedToLoopbackHTTP() throws {

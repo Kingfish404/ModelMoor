@@ -23,8 +23,7 @@ public struct ModelMoorRuntimeProfile: Equatable, Sendable {
     public let tokenUsageURL: URL
     public let cliProxyDataDirectoryURL: URL
     public let preferencesURL: URL
-    /// Service/label namespace used by the platform secret store backend
-    /// (Keychain service on macOS; reserved for the Secret Service adapter).
+    /// Legacy service namespace retained for compatibility, not file storage.
     public let secretService: String
     public let legacySecretServices: [String]
     public let runtimeDirectoryURL: URL

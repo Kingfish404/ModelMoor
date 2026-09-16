@@ -22,7 +22,7 @@ endif
 export CLANG_MODULE_CACHE_PATH := $(MODULE_CACHE)
 export SWIFTPM_MODULECACHE_OVERRIDE := $(MODULE_CACHE)
 
-BUILD_OPTIONS := --disable-sandbox --cache-path $(CACHE_DIR)
+BUILD_OPTIONS := --disable-sandbox --cache-path $(CACHE_DIR) --build-system native
 
 .DEFAULT_GOAL := help
 

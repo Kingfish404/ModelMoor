@@ -11,6 +11,7 @@ struct MainWindowView: View {
     @State private var showsAddEndpoint = false
     @State private var showsAddSSHConnection = false
     @State private var showsAddModels = false
+    @State private var isReloadingConfiguration = false
 
     var body: some View {
         NavigationSplitView {
@@ -134,6 +135,19 @@ struct MainWindowView: View {
                 Label("Show or hide sidebar", systemImage: "sidebar.left")
             }
             .help("Show or hide the sidebar")
+            Button {
+                dirtyDrafts.requestTransition {
+                    isReloadingConfiguration = true
+                    Task {
+                        await model.reloadConfiguration()
+                        isReloadingConfiguration = false
+                    }
+                }
+            } label: {
+                Label("Reload Configuration", systemImage: "arrow.clockwise.document")
+            }
+            .help("Reload Configuration")
+            .disabled(isReloadingConfiguration || !model.isLoaded)
         }
 
         ToolbarItemGroup(placement: .primaryAction) {

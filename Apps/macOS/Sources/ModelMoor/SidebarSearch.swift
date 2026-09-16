@@ -185,7 +185,7 @@ struct SidebarSearchIndex {
     ) -> [String] {
         let source: String
         switch endpoint.source {
-        case let .directHTTPS(origin): source = origin.host ?? "Direct HTTPS"
+        case let .directHTTPS(origin): source = origin.host ?? "Direct HTTP(S)"
         case .managedCLIProxy: source = "Subscription accounts"
         case let .sshMapping(mappingID, _):
             source = connectionNamesByMappingID[mappingID].map { "via \($0)" }

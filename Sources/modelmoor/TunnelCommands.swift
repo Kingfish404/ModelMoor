@@ -203,7 +203,7 @@ struct RunCommand: AsyncParsableCommand {
             selected = loaded.configuration.tunnels.filter(\.connectOnLaunch)
         }
         guard !selected.isEmpty || loaded.configuration.gateway.enabled else {
-            throw CLIError("No moorings or Local Gateway are enabled for startup.")
+            throw CLIError("No moorings and no Unified API are enabled for startup.")
         }
         try await session.startRuntime(
             owner: "modelmoor run",

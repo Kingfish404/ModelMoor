@@ -49,6 +49,12 @@ struct SSHConnectionDetailView: View {
             synchronizeDirtyDraft()
         }
         .onChange(of: draft) { _, _ in synchronizeDirtyDraft() }
+        .onChange(of: original) { previous, _ in
+            if draft == previous {
+                reloadDraft()
+                synchronizeDirtyDraft()
+            }
+        }
         .onChange(of: dirtyDrafts.resolution) { _, resolution in
             guard resolution?.draftID == draftID else { return }
             reloadDraft()
@@ -317,7 +323,7 @@ struct SSHConnectionDetailView: View {
     }
 
     private var deleteMessage: String {
-        "This removes \(affectedEndpoints.count) API endpoints, \(affectedRoutes) Unified Models, and their Keychain credentials. The remote SSH host is unchanged."
+        "This removes \(affectedEndpoints.count) API endpoints, \(affectedRoutes) Unified Models, and their file-backed credentials. The remote SSH host is unchanged."
     }
 
     private func reloadDraft() { draft = original }

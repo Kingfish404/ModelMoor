@@ -9,10 +9,10 @@ DGX Spark (SGLang :8888)
         |  SSH (system OpenSSH, managed by ModelMoor)
         v
 macOS local port (e.g. 18888)
-        |                         DeepSeek / other HTTPS API + Keychain key
+        |                         DeepSeek / other HTTPS API + file-backed key
         +-----------------------------+
                                       v
-ModelMoor Local Gateway (http://127.0.0.1:17777/v1)
+ModelMoor Unified API (http://127.0.0.1:17777/v1)
         |  one URL, one local bearer token, stable model aliases
         v
 VS Code Copilot (custom endpoint in chatLanguageModels.json)
@@ -96,18 +96,18 @@ curl http://127.0.0.1:18888/v1/models
 # should return the model list containing "qwen3.8-27b-sglang"
 ```
 
-> You can still use the `18888` URL directly, but each additional remote would require another client URL. The Local Gateway in the next step keeps the client URL fixed at `17777`.
+> You can still use the `18888` URL directly, but each additional remote would require another client URL. The Unified API in the next step keeps the client URL fixed at `17777`.
 
 ## 4. Add it to the unified API
 
 In the ModelMoor main window:
 
 1. Refresh the DGX entry under **API Endpoints** and confirm that it discovers `qwen3.8-27b-sglang`.
-2. Under **Unified API / Local Gateway**, add a model mapping. Keep `qwen3.8-27b-sglang` as the public model name, select the DGX source endpoint, and use the same upstream model ID.
-3. Enable Local Gateway, then save and apply.
+2. Under **Unified API**, add a model mapping. Keep `qwen3.8-27b-sglang` as the public model name, select the DGX source endpoint, and use the same upstream model ID.
+3. Enable Unified API, then save and apply.
 4. Keep **Require API key** on by default, then copy the Unified API URL and one enabled API key. The default URL is `http://127.0.0.1:17777/v1`. You can create, enable, or disable separate keys for each client; if you explicitly turn authentication off, clients do not need a key.
 
-To add DeepSeek later, use the DeepSeek preset, save its API key, and map any desired DeepSeek models. Commercial keys remain separated per endpoint in the macOS Keychain; the client receives only a ModelMoor Unified API key.
+To add DeepSeek later, use the DeepSeek preset, save its API key, and map any desired DeepSeek models. Commercial keys remain separated per endpoint in an owner-only secrets file; the client receives only a ModelMoor Unified API key.
 
 Verify the unified model list:
 
@@ -179,7 +179,7 @@ Optional: let Copilot pass a reasoning effort (thinking is on by default; depth 
 ]
 ```
 
-If you specifically need SGLang's native Anthropic-compatible `/v1/messages`, use the `18888` endpoint directly. The first Local Gateway contract covers only OpenAI-compatible JSON/SSE.
+If you specifically need SGLang's native Anthropic-compatible `/v1/messages`, use the `18888` endpoint directly. The Unified API contract covers only OpenAI-compatible JSON/SSE and does not translate protocols.
 
 After saving, restart VS Code (or refresh the Copilot model picker) — the model list should now show **DGXSpark -> Qwen 3.8 27B SGLang**.
 
@@ -200,11 +200,11 @@ After saving, restart VS Code (or refresh the Copilot model picker) — the mode
 
 ## Troubleshooting
 
-- **Connection refused / timeout**: check in order 1) SGLang is up on the DGX; 2) the ModelMoor SSH connection is connected; 3) Local Gateway is ready; 4) the client uses the Gateway URL.
+- **Connection refused / timeout**: check in order 1) SGLang is up on the DGX; 2) the ModelMoor SSH connection is connected; 3) Unified API is ready; 4) the client uses the Unified API URL.
 - **401**: while Require API key is on, the client must use an enabled Unified API key. Do not use a DGX placeholder key or a DeepSeek key.
 - **Model returns 404**: the request's `model` must exactly match its public name in Unified API.
 - **SSH auth failure**: ModelMoor uses `BatchMode=yes`, so key-based passwordless login is required; password login will not work.
-- **Local port in use**: either the SSH mapping's `18888` or the Gateway's `17777` can conflict. Change only the conflicting port; clients should continue to follow the Gateway URL.
+- **Local port in use**: either the SSH mapping's `18888` or the Unified API's `17777` can conflict. Change only the conflicting port; clients should continue to follow the Unified API URL.
 - **Slow first response**: the first long prefill after a cold boot takes ~13 s (Triton kernel warmup), then ~8 s — this is normal.
 - **Context overflow**: the default context is 262K; if long sessions return 400, shorten the context or extend it on the DGX with `YARN=1` + `CONTEXT_LENGTH` (MTP engine only), and raise `maxInputTokens` accordingly.
 - **Engine choice**: use DSpark (`./start-dspark.sh`, ~51.5 tok/s on code) for code / agents / everyday chat; use MTP (`./start.sh`, ~24.1 tok/s on long essays) for long-form writing. Switching requires `./stop.sh` followed by the other start script.

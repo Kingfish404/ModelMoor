@@ -4,13 +4,22 @@ set -euo pipefail
 SCRIPT_DIR="${0:A:h}"
 BUILD_SCRIPT="$SCRIPT_DIR/build-app.sh"
 
+if grep -q 'security find-identity' "$BUILD_SCRIPT"; then
+  print -u2 "error: local builds must not discover Keychain signing identities"
+  exit 1
+fi
+if ! grep -Fq 'SIGN_IDENTITY="${MODELMOOR_CODE_SIGN_IDENTITY:--}"' "$BUILD_SCRIPT"; then
+  print -u2 "error: local builds must default to ad-hoc signing"
+  exit 1
+fi
+
 KEYCHAIN_SIGNING_COUNT="$(awk '
   /^[[:space:]]*codesign[[:space:]].*--sign[[:space:]]+"\$SIGN_IDENTITY"/ { count += 1 }
   END { print count + 0 }
 ' "$BUILD_SCRIPT")"
 
 if [[ "$KEYCHAIN_SIGNING_COUNT" -ne 1 ]]; then
-  print -u2 "error: build-app.sh must use the Keychain-backed identity exactly once; found $KEYCHAIN_SIGNING_COUNT"
+  print -u2 "error: build-app.sh must sign the outer app exactly once; found $KEYCHAIN_SIGNING_COUNT"
   exit 1
 fi
 

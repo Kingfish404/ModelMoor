@@ -507,14 +507,14 @@ public enum EndpointURLResolver {
 
     static func validateDirectOrigin(_ url: URL) throws {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.scheme?.lowercased() == "https",
-              components.host != nil,
+              ["http", "https"].contains(components.scheme?.lowercased() ?? ""),
+              let host = components.host, !host.isEmpty,
               components.user == nil,
               components.password == nil,
               components.path.isEmpty,
               components.query == nil,
               components.fragment == nil else {
-            throw ConfigurationError.invalidValue("Direct endpoint origin must be an HTTPS origin without credentials, path, query, or fragment.")
+            throw ConfigurationError.invalidValue("Direct endpoint origin must be an HTTP or HTTPS origin without credentials, path, query, or fragment.")
         }
     }
 

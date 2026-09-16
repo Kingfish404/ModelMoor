@@ -185,6 +185,8 @@ public actor ModelMoorSession {
     /// Loads configuration from disk and resets requested tunnels to the
     /// configuration's connectOnLaunch set.
     public func load() async throws {
+        let secretStore = interactiveSecretStore
+        try await Task.detached { try secretStore.prepareForUse() }.value
         let configuration = try await store.load()
         snapshot.configuration = configuration
         snapshot.requestedTunnelIDs = Set(configuration.tunnels.filter(\.connectOnLaunch).map(\.id))
@@ -193,6 +195,17 @@ public actor ModelMoorSession {
         )
         snapshot.isLoaded = true
         await refreshUsage()
+        emit()
+    }
+
+    public func reloadConfiguration() async throws {
+        let configuration = try await store.load()
+        snapshot.configuration = configuration
+        snapshot.requestedTunnelIDs.formIntersection(configuration.tunnels.map(\.id))
+        await refreshEndpointCredentialAvailability()
+        await reconcileTunnels()
+        await reconcileManagedSubscriptions()
+        await reconcileGateway()
         emit()
     }
 
