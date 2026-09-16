@@ -35,20 +35,18 @@ final class GatewayTests: XCTestCase {
         XCTAssertTrue(ledger.usage(for: route, now: now)[0].usageUnknown)
     }
 
-    func testBudgetRouterHidesAndRejectsExhaustedModel() throws {
+    func testBudgetRouterListsAndForwardsExhaustedModel() throws {
         var snapshot = makeFixture().snapshot
         snapshot.configuration.routes[0].budget = .init(daily: .init(tokens: 0))
         let router = GatewayRequestRouter(snapshot: snapshot, budgetLedger: GatewayBudgetLedger())
         let model = snapshot.configuration.routes[0].publicModel
         let body = try JSONSerialization.data(withJSONObject: ["model": model])
         let decision = router.route(.init(method: "POST", uri: "/v1/chat/completions", headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"], body: body))
-        guard case let .local(response) = decision else { return XCTFail("Exhausted model reached upstream") }
-        XCTAssertEqual(response.status, 429)
-        XCTAssertTrue(String(decoding: response.body, as: UTF8.self).contains("insufficient_quota"))
+        guard case .upstream = decision else { return XCTFail("Budget warnings must not block upstream requests") }
         guard case let .local(models) = router.route(.init(method: "GET", uri: "/v1/models", headers: ["Authorization": "Bearer local-token"], body: Data())) else { return XCTFail() }
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: models.body) as? [String: Any])
         let entries = try XCTUnwrap(object["data"] as? [[String: String]])
-        XCTAssertFalse(entries.contains { $0["id"] == model })
+        XCTAssertTrue(entries.contains { $0["id"] == model })
     }
 
     func testBudgetWeeklyMonthlyResetsAndUnknownUsage() throws {
@@ -244,12 +242,6 @@ final class GatewayTests: XCTestCase {
             XCTAssertFalse(upstream.requestText.contains("Bearer local-token"))
             XCTAssertTrue(upstream.requestText.contains("upstream-model"))
             XCTAssertEqual(usage.values.map(\.tokens), fixtureResponse.statusCode == 200 ? [42] : [])
-            if fixtureResponse.statusCode == 200 {
-                let (blockedBody, blockedResponse) = try await URLSession.shared.data(for: request)
-                XCTAssertEqual((blockedResponse as? HTTPURLResponse)?.statusCode, 429)
-                XCTAssertTrue(String(decoding: blockedBody, as: UTF8.self).contains("insufficient_quota"))
-                XCTAssertEqual(upstream.requestCount, 1)
-            }
             await service.stop()
         }
     }

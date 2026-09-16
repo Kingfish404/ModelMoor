@@ -128,6 +128,8 @@
 	<string>Budget period</string>
 	<key>Budget storage unavailable</key>
 	<string>Budget storage unavailable</string>
+	<key>Budget warning</key>
+	<string>Budget warning</string>
 	<key>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</key>
 	<string>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</string>
 	<key>Cancel</key>
@@ -210,6 +212,8 @@
 	<string>Copy %@</string>
 	<key>Copy %@ API key</key>
 	<string>Copy %@ API key</string>
+	<key>Copy API Key</key>
+	<string>Copy API Key</string>
 	<key>Copy API key</key>
 	<string>Copy API key</string>
 	<key>Copy Code</key>
@@ -356,6 +360,8 @@
 	<string>HTTP(S) origin</string>
 	<key>Health path</key>
 	<string>Health path</string>
+	<key>Hide API Key</key>
+	<string>Hide API Key</string>
 	<key>Host</key>
 	<string>Host</string>
 	<key>Idle</key>
@@ -620,6 +626,8 @@
 	<string>Remove this API key?</string>
 	<key>Remove this subscription account?</key>
 	<string>Remove this subscription account?</string>
+	<key>Rename Key</key>
+	<string>Rename Key</string>
 	<key>Replace Key…</key>
 	<string>Replace Key…</string>
 	<key>Require API key</key>
@@ -644,6 +652,8 @@
 	<string>Rotate Key…</string>
 	<key>Rotate this API key?</key>
 	<string>Rotate this API key?</string>
+	<key>Routing</key>
+	<string>Routing</string>
 	<key>Run Diagnostics</key>
 	<string>Run Diagnostics</string>
 	<key>Run a read-only model-list request before creating this endpoint.</key>
@@ -684,6 +694,8 @@
 	<string>Settings</string>
 	<key>Settings…</key>
 	<string>Settings…</string>
+	<key>Show API Key</key>
+	<string>Show API Key</string>
 	<key>Show SSH Connection</key>
 	<string>Show SSH Connection</string>
 	<key>Show Unified API</key>

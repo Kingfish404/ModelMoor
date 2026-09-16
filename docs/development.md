@@ -240,7 +240,7 @@ Review `README.md`, `docs/index.html`, `docs/dgx-spark-copilot.en.md`, `docs/dgx
 
 **Budgets and usage**
 
-- [ ] Per-model budgets read as local estimates at configured prices with fail-closed blocking, never as quota, billing, accounting, spend cap, or invoice.
+- [ ] Per-model budgets read as local estimates at configured prices with warnings only, never blocking requests or claiming provider quota, billing, accounting, spend cap, or invoice.
 - [ ] Usage claims repeat that only requests through this runtime are counted, that counting depends on upstream `usage` fields, and that these numbers are not additive with a gateway's or a provider's own accounting.
 
 **Feature status**

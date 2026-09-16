@@ -107,6 +107,16 @@ extension ModelMoorSession {
         return key.id
     }
 
+    public func revealEndpointAPIKey(_ keyID: UUID, endpointID: UUID) throws -> String {
+        guard snapshot.configuration.endpoints.contains(where: {
+            $0.id == endpointID && $0.apiKeys.contains(where: { $0.id == keyID })
+        }) else { throw ConfigurationError.invalidValue("Endpoint API key not found: \(keyID.uuidString)") }
+        guard let secret = try secretStore().token(for: keyID), !secret.isEmpty else {
+            throw ConfigurationError.invalidValue("API key not set")
+        }
+        return secret
+    }
+
     public func replaceEndpointAPIKey(_ keyID: UUID, endpointID: UUID, secret: String) async throws {
         guard snapshot.configuration.endpoints.contains(where: {
             $0.id == endpointID && $0.apiKeys.contains(where: { $0.id == keyID })
@@ -122,6 +132,18 @@ extension ModelMoorSession {
             await inspectEndpoint(endpointID)
             await reconcileGatewayAfterCredentialChange()
         }
+    }
+
+    public func renameEndpointAPIKey(_ keyID: UUID, endpointID: UUID, name: String) async throws {
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { throw ConfigurationError.invalidValue("Enter a key name.") }
+        var candidate = snapshot.configuration
+        guard let endpointIndex = candidate.endpoints.firstIndex(where: { $0.id == endpointID }),
+              let keyIndex = candidate.endpoints[endpointIndex].apiKeys.firstIndex(where: { $0.id == keyID }) else {
+            throw ConfigurationError.invalidValue("Endpoint API key not found: \(keyID.uuidString)")
+        }
+        candidate.endpoints[endpointIndex].apiKeys[keyIndex].name = cleanName
+        try await saveConfiguration(candidate)
     }
 
     public func selectEndpointAPIKey(_ keyID: UUID, endpointID: UUID) async throws {

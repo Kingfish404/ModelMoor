@@ -32,7 +32,7 @@ struct ModelBudgetUsageView: View {
                         Text(route.publicModel).font(.callout.monospaced()).textSelection(.enabled)
                         Spacer()
                         if usage[route.id]?.contains(where: \.isBlocked) == true {
-                            Label("Budget paused", systemImage: "pause.circle.fill").foregroundStyle(.red)
+                            Label("Budget warning", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
                         }
                         if allowsEditing {
                             Button { editingRoute = route } label: { Image(systemName: "slider.horizontal.3") }

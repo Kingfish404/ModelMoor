@@ -1013,6 +1013,23 @@ final class AppModel: ObservableObject {
         availableEndpointAPIKeyIDs.contains(keyID)
     }
 
+    func revealEndpointAPIKey(_ keyID: UUID, endpointID: UUID) async -> String? {
+        do {
+            let secret = try await session.revealEndpointAPIKey(keyID, endpointID: endpointID)
+            errorMessage = nil
+            return secret
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func copyEndpointAPIKey(_ keyID: UUID, endpointID: UUID) async {
+        if let secret = await revealEndpointAPIKey(keyID, endpointID: endpointID) {
+            copy(secret)
+        }
+    }
+
     func createEndpointAPIKey(
         endpointID: UUID,
         name: String,
@@ -1051,6 +1068,17 @@ final class AppModel: ObservableObject {
         } catch {
             errorMessage = error.localizedDescription
             return false
+        }
+    }
+
+    func renameEndpointAPIKey(_ keyID: UUID, endpointID: UUID, name: String) async {
+        do {
+            try await session.renameEndpointAPIKey(keyID, endpointID: endpointID, name: name)
+            await syncFromSession()
+            lastSavedAt = Date()
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 

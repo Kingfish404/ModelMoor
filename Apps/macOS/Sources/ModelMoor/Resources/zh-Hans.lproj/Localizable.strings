@@ -128,6 +128,8 @@
 	<string>预算周期</string>
 	<key>Budget storage unavailable</key>
 	<string>预算账本不可用</string>
+	<key>Budget warning</key>
+	<string>预算警告</string>
 	<key>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</key>
 	<string>CLIProxyAPI 辅助程序配置和 OAuth 账户文件；此文件夹可能包含敏感凭据。</string>
 	<key>Cancel</key>
@@ -210,6 +212,8 @@
 	<string>复制 %@</string>
 	<key>Copy %@ API key</key>
 	<string>复制 %@ API 密钥</string>
+	<key>Copy API Key</key>
+	<string>复制 API 密钥</string>
 	<key>Copy API key</key>
 	<string>复制 API 密钥</string>
 	<key>Copy Code</key>
@@ -356,6 +360,8 @@
 	<string>HTTP(S) 源站</string>
 	<key>Health path</key>
 	<string>健康检查路径</string>
+	<key>Hide API Key</key>
+	<string>隐藏 API 密钥</string>
 	<key>Host</key>
 	<string>主机</string>
 	<key>Idle</key>
@@ -620,6 +626,8 @@
 	<string>要移除此 API 密钥吗？</string>
 	<key>Remove this subscription account?</key>
 	<string>要移除此订阅账户吗？</string>
+	<key>Rename Key</key>
+	<string>重命名密钥</string>
 	<key>Replace Key…</key>
 	<string>替换密钥…</string>
 	<key>Require API key</key>
@@ -644,6 +652,8 @@
 	<string>轮换密钥…</string>
 	<key>Rotate this API key?</key>
 	<string>要轮换此 API 密钥吗？</string>
+	<key>Routing</key>
+	<string>路由</string>
 	<key>Run Diagnostics</key>
 	<string>运行诊断</string>
 	<key>Run a read-only model-list request before creating this endpoint.</key>
@@ -684,6 +694,8 @@
 	<string>设置</string>
 	<key>Settings…</key>
 	<string>设置…</string>
+	<key>Show API Key</key>
+	<string>显示 API 密钥</string>
 	<key>Show SSH Connection</key>
 	<string>显示 SSH 连接</string>
 	<key>Show Unified API</key>

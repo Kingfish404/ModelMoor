@@ -386,6 +386,10 @@ struct EndpointTokenEditor: View {
     let endpointID: UUID
     @State private var editorMode: EndpointKeyEditorMode?
     @State private var keyPendingRemoval: EndpointAPIKeyConfiguration?
+    @State private var keyPendingRename: EndpointAPIKeyConfiguration?
+    @State private var keyName = ""
+    @State private var revealedKeys: [UUID: String] = [:]
+    @State private var revealGeneration = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -401,6 +405,18 @@ struct EndpointTokenEditor: View {
                 Text("No API keys saved. Add one to authenticate this endpoint.")
                     .foregroundStyle(.secondary)
             } else if let endpoint {
+                Picker("Routing", selection: Binding(
+                    get: { endpoint.activeAPIKeyID },
+                    set: { keyID in
+                        guard let keyID else { return }
+                        Task { await model.selectEndpointAPIKey(keyID, endpointID: endpointID) }
+                    }
+                )) {
+                    ForEach(endpoint.apiKeys.filter { model.hasToken(forAPIKey: $0.id) }) { key in
+                        Text(key.name).tag(Optional(key.id))
+                    }
+                }
+                .disabled(endpoint.apiKeys.allSatisfy { !model.hasToken(forAPIKey: $0.id) })
                 ForEach(Array(endpoint.apiKeys.enumerated()), id: \.element.id) { index, key in
                     if index > 0 { Divider() }
                     apiKeyRow(key, activeKeyID: endpoint.activeAPIKeyID)
@@ -410,6 +426,24 @@ struct EndpointTokenEditor: View {
         .sheet(item: $editorMode) { mode in
             EndpointAPIKeyEditorSheet(endpointID: endpointID, mode: mode)
                 .environmentObject(model)
+        }
+        .onChange(of: endpointID) { clearRevealedKeys() }
+        .onChange(of: endpoint) { clearRevealedKeys() }
+        .onChange(of: editorMode?.id) { clearRevealedKeys() }
+        .onDisappear { clearRevealedKeys() }
+        .alert("Rename Key", isPresented: Binding(
+            get: { keyPendingRename != nil },
+            set: { if !$0 { keyPendingRename = nil } }
+        )) {
+            TextField("Name", text: $keyName)
+            Button("Save") {
+                guard let key = keyPendingRename else { return }
+                let name = keyName
+                Task { await model.renameEndpointAPIKey(key.id, endpointID: endpointID, name: name) }
+                keyPendingRename = nil
+            }
+            .disabled(keyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Cancel", role: .cancel) { keyPendingRename = nil }
         }
         .confirmationDialog(
             "Remove this API key?",
@@ -433,6 +467,11 @@ struct EndpointTokenEditor: View {
         model.configuration.endpoints.first { $0.id == endpointID }
     }
 
+    private func clearRevealedKeys() {
+        revealGeneration = UUID()
+        revealedKeys.removeAll()
+    }
+
     private func apiKeyRow(
         _ key: EndpointAPIKeyConfiguration,
         activeKeyID: UUID?
@@ -453,14 +492,49 @@ struct EndpointTokenEditor: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(key.name)
+                if let secret = revealedKeys[key.id] {
+                    Text(verbatim: secret)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text(isSaved ? (isActive ? "In use, saved in the private secrets file" : "Saved in the private secrets file") : "API key not set")
                     .font(.caption)
                     .foregroundStyle(isSaved ? Color.secondary : Color.orange)
             }
             Spacer()
+            Button {
+                if revealedKeys[key.id] != nil {
+                    revealedKeys[key.id] = nil
+                } else {
+                    let generation = revealGeneration
+                    Task {
+                        let secret = await model.revealEndpointAPIKey(key.id, endpointID: endpointID)
+                        guard generation == revealGeneration else { return }
+                        revealedKeys[key.id] = secret
+                    }
+                }
+            } label: {
+                Image(systemName: revealedKeys[key.id] == nil ? "eye" : "eye.slash")
+            }
+            .help(revealedKeys[key.id] == nil ? "Show API Key" : "Hide API Key")
+            .accessibilityLabel(revealedKeys[key.id] == nil ? "Show API Key" : "Hide API Key")
+            .disabled(!isSaved)
+            Button {
+                Task { await model.copyEndpointAPIKey(key.id, endpointID: endpointID) }
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .help("Copy API Key")
+            .accessibilityLabel("Copy API Key")
+            .disabled(!isSaved)
             Menu {
                 Button(isSaved ? "Replace Key…" : "Set Key…") {
                     editorMode = .replace(key)
+                }
+                Button("Rename Key") {
+                    keyName = key.name
+                    keyPendingRename = key
                 }
                 Button("Remove Key…", role: .destructive) {
                     keyPendingRemoval = key

@@ -161,9 +161,6 @@ public struct GatewayRequestRouter: Sendable {
         guard let route = routesByPublicModel[publicModel] else {
             return .local(error(status: 404, code: "model_not_found", message: "No enabled route exists for model \(publicModel)."))
         }
-        if budgetLedger?.unavailable(route) == true {
-            return .local(error(status: 429, code: "insufficient_quota", message: "This model is unavailable because its budget is exhausted or usage could not be verified."))
-        }
         guard let endpoint = endpointsByID[route.endpointID],
               endpoint.enabled,
               endpoint.kind == .openAICompatible else {
@@ -247,7 +244,6 @@ public struct GatewayRequestRouter: Sendable {
 
     private func modelsResponse() -> GatewayLocalResponse {
         let models = routesByPublicModel.values
-            .filter { budgetLedger?.unavailable($0) != true }
             .map { ["id": $0.publicModel, "object": "model", "owned_by": "modelmoor"] }
             .sorted { ($0["id"] ?? "") < ($1["id"] ?? "") }
         let body = (try? JSONSerialization.data(withJSONObject: ["object": "list", "data": models])) ?? Data("{\"object\":\"list\",\"data\":[]}".utf8)
