@@ -67,7 +67,7 @@ test: architecture-check signing-policy-check ## Run architecture/signing checks
 architecture-check: ## Reject cross-layer platform/UI/terminal imports
 	./Scripts/check-layering.sh
 
-signing-policy-check: ## Limit app builds to one Keychain private-key use
+signing-policy-check: ## Verify ad-hoc signing defaults and inside-out signing order
 	./Scripts/check-signing-policy.sh
 
 localization-check: ## Verify catalog parity and compiler-extracted GUI key coverage

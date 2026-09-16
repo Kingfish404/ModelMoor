@@ -214,7 +214,7 @@ For testing or automation, set `MODELMOOR_CONFIG=/path/to/config.json` to point 
 
 When the selected XDG file does not exist, ModelMoor copies the matching legacy file from `~/Library/Application Support/ModelMoor*/config.json`, then performs schema migration only on the new copy. The legacy file is never moved, overwritten, or deleted. If the XDG file already exists, it always wins.
 
-Schema v3 keeps SSH port mappings, API endpoints, public model routes, Unified API settings, and managed CLIProxyAPI settings separate. Secrets are never serialized into ordinary configuration: endpoint keys use the endpoint UUID as their account in the separate secrets file. Unified API key metadata is stored in configuration, while each value uses its key UUID as a secret account. The default key retains the `gateway-client-token` account identifier and its existing Keychain value is preserved during migration.
+Schema v3 keeps SSH port mappings, API endpoints, public model routes, Unified API settings, and managed CLIProxyAPI settings separate. Secrets are never serialized into ordinary configuration: endpoint keys use the endpoint UUID as their account in the separate secrets file. Unified API key metadata is stored in configuration, while each value uses its key UUID as a secret account. The default key retains the `gateway-client-token` account identifier in the secrets file; no Keychain migration occurs.
 
 Unified API usage history lives at `~/Library/Application Support/ModelMoor/token-usage.jsonl`. Each line contains only a timestamp, a total token count reported by an upstream response, and internal route/endpoint identifiers used by the Usage filters. Set `MODELMOOR_USAGE=/path/to/token-usage.jsonl` to isolate this file in tests or automation.
 

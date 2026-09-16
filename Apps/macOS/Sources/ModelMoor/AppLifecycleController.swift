@@ -151,6 +151,22 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate, NSWindowDel
         NSApplication.shared.terminate(nil)
     }
 
+    @Published private(set) var isReloadingConfiguration = false
+
+    func reloadConfiguration() {
+        guard model.isLoaded, !isReloadingConfiguration else { return }
+        if dirtyDrafts.hasUnsavedChanges { showMainWindow() }
+        dirtyDrafts.requestTransition { [weak self] in
+            guard let self, !isReloadingConfiguration else { return }
+            isReloadingConfiguration = true
+            Task {
+                await model.reloadConfiguration()
+                isReloadingConfiguration = false
+                if model.errorMessage != nil { showMainWindow() }
+            }
+        }
+    }
+
     /// Commands that create and select another item must resolve the visible
     /// draft before mutating configuration, just like sidebar navigation.
     func duplicateSelectedItem() {

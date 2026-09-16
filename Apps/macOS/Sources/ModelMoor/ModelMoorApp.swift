@@ -45,9 +45,12 @@ struct ModelMoorApp: App {
                 }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(!canRefreshAllEndpoints)
+
+                Button("Reload", action: lifecycle.reloadConfiguration)
+                    .disabled(lifecycle.isReloadingConfiguration || !lifecycle.model.isLoaded)
             }
 
-            CommandMenu("Navigate") {
+            CommandMenu("Nav") {
                 Button("Search Sidebar") {
                     lifecycle.focusSidebarSearch()
                 }
@@ -92,7 +95,7 @@ struct ModelMoorApp: App {
                 .disabled(!lifecycle.model.canDuplicateSelectedEndpoint && lifecycle.model.selectedTunnelID == nil)
             }
 
-            CommandMenu("Connection") {
+            CommandMenu("API") {
                 Button("Connect Selected") {
                     guard let id = lifecycle.model.selectedTunnelID else { return }
                     Task { await lifecycle.model.connect(id) }
@@ -119,9 +122,8 @@ struct ModelMoorApp: App {
                     .disabled(!lifecycle.model.canConnectAll)
                 Button("Disconnect All") { Task { await lifecycle.model.disconnectAll() } }
                     .disabled(!lifecycle.model.canDisconnectAll)
-            }
 
-            CommandMenu("Unified API") {
+                Divider()
                 Button("Show Unified API") {
                     lifecycle.model.showGateway()
                     lifecycle.showMainWindow()

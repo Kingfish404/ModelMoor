@@ -452,6 +452,8 @@
 	<string>更多密钥操作</string>
 	<key>Name</key>
 	<string>名称</string>
+	<key>Nav</key>
+	<string>导航</string>
 	<key>Navigate</key>
 	<string>导航</string>
 	<key>Needs Attention</key>
@@ -578,6 +580,8 @@
 	<string>正在刷新用量</string>
 	<key>Refreshing…</key>
 	<string>正在刷新…</string>
+	<key>Reload</key>
+	<string>重载</string>
 	<key>Reload Configuration</key>
 	<string>重新加载配置</string>
 	<key>Reload SSH configuration</key>

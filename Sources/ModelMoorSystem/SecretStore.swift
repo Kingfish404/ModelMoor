@@ -2,7 +2,7 @@ import Foundation
 import ModelMoorCore
 
 /// Account naming and token formatting shared by every secret store backend.
-/// The account strings are part of the on-disk/on-Keychain contract and must
+/// The account strings are part of the on-disk contract and must
 /// not change across platforms or releases.
 public enum SecretStoreSupport {
     public static let productionService = "com.modelmoor.api-token"

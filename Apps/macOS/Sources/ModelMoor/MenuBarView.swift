@@ -25,6 +25,9 @@ struct MenuBarView: View {
         }
         .disabled(!canRefreshAllEndpoints)
 
+        Button("Reload", action: lifecycle.reloadConfiguration)
+            .disabled(lifecycle.isReloadingConfiguration || !model.isLoaded)
+
         Button { lifecycle.showMainWindow() } label: {
             Text("Open \(model.runtimeProfile.displayName)")
         }

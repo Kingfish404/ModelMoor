@@ -452,6 +452,8 @@
 	<string>More key actions</string>
 	<key>Name</key>
 	<string>Name</string>
+	<key>Nav</key>
+	<string>Nav</string>
 	<key>Navigate</key>
 	<string>Navigate</string>
 	<key>Needs Attention</key>
@@ -578,6 +580,8 @@
 	<string>Refreshing usage</string>
 	<key>Refreshing…</key>
 	<string>Refreshing…</string>
+	<key>Reload</key>
+	<string>Reload</string>
 	<key>Reload Configuration</key>
 	<string>Reload Configuration</string>
 	<key>Reload SSH configuration</key>
