@@ -49,6 +49,11 @@ path.write_text(source[:start] + new + "\n" + source[end:])
 PY
 }
 
+# SwiftTerm's `SwiftTerm` target ships an optional Metal backend. ModelMoor's
+# TUI uses the portable terminal core only, so the shader is dropped. Removing
+# the resource declaration alone is not enough: an undeclared `.metal` file is
+# reported by SwiftPM as "found 1 file(s) which are unhandled", so the shader
+# must also be excluded from the target.
 patch_swiftterm_checkout() {
     local checkout="$1"
     local file="$checkout/Package.swift"
@@ -64,25 +69,36 @@ import sys
 
 path = Path(sys.argv[1])
 source = path.read_text()
-old = '''        resources: [
+resources_before = '''        resources: [
             .process("Apple/Metal/Shaders.metal")
         ],
 '''
-new = '''        // ModelMoor's TUI does not use SwiftTerm's optional Metal backend.
+resources_after = '''        // ModelMoor's TUI does not use SwiftTerm's optional Metal backend.
         resources: [],
 '''
+# Both the Windows and the macOS/Linux variant declare this exclude list, and
+# both belong to the `SwiftTerm` target.
+exclude_before = 'exclude: platformExcludes + ["Mac/README.md"],\n'
+exclude_after = (
+    'exclude: platformExcludes + ["Mac/README.md", "Apple/Metal/Shaders.metal"],\n'
+)
 
-if new in source:
+if exclude_after in source and resources_before not in source:
     raise SystemExit(0)
-if old not in source:
+if resources_before in source:
+    source = source.replace(resources_before, resources_after, 1)
+if exclude_before not in source:
     raise SystemExit(f"unexpected SwiftTerm Package.swift contents: {path}")
-path.write_text(source.replace(old, new, 1))
+path.write_text(source.replace(exclude_before, exclude_after))
 PY
 }
 
-checkout_roots=(.build/checkouts Apps/TUI/.build/checkouts)
+# Every package that resolves TermKit/SwiftTerm needs the patch. Apps/macOS
+# resolves its own checkouts because it builds the GUI app on top of the TUI
+# modules; missing directories are skipped below.
+checkout_roots=(.build/checkouts Apps/TUI/.build/checkouts Apps/macOS/.build/checkouts)
 if [[ -n "${SWIFTPM_PATCH_ROOTS:-}" ]]; then
-    IFS=: read -r -a extra_roots <<< "$SWIFTPM_PATCH_ROOTS"
+    IFS=: read -r -a extra_roots <<<"$SWIFTPM_PATCH_ROOTS"
     checkout_roots+=("${extra_roots[@]}")
 fi
 

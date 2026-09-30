@@ -8,6 +8,8 @@
 	<string>%@ 有尚未应用的更改。离开此视图前要应用它们吗？</string>
 	<key>%@ tokens in 24 hours</key>
 	<string>24 小时内 %@ 个令牌</string>
+	<key>%@ · Sent %@ · Received %@</key>
+	<string>%@ · 发送 %@ · 接收 %@</string>
 	<key>%@, %@</key>
 	<string>%1$@，%2$@</string>
 	<key>%@, %@ tokens</key>
@@ -96,6 +98,8 @@
 	<string>所有端点</string>
 	<key>All models</key>
 	<string>所有模型</string>
+	<key>All paths</key>
+	<string>所有路径</string>
 	<key>Amount limit (USD)</key>
 	<string>金额上限（美元）</string>
 	<key>App Preferences</key>
@@ -130,6 +134,8 @@
 	<string>预算账本不可用</string>
 	<key>Budget warning</key>
 	<string>预算警告</string>
+	<key>Bytes</key>
+	<string>字节</string>
 	<key>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</key>
 	<string>CLIProxyAPI 辅助程序配置和 OAuth 账户文件；此文件夹可能包含敏感凭据。</string>
 	<key>Cancel</key>
@@ -262,6 +268,14 @@
 	<string>DGX Spark API</string>
 	<key>Daily</key>
 	<string>每日</string>
+	<key>Data</key>
+	<string>流量</string>
+	<key>Data history unavailable</key>
+	<string>无法读取流量历史</string>
+	<key>Data transferred per %@</key>
+	<string>每%@传输的流量</string>
+	<key>Data usage</key>
+	<string>流量用量</string>
 	<key>DeepSeek API key</key>
 	<string>DeepSeek API 密钥</string>
 	<key>Delete API Endpoint…</key>
@@ -290,6 +304,8 @@
 	<string>直接连接</string>
 	<key>Direct HTTP(S) API</key>
 	<string>直连 HTTP(S) API</string>
+	<key>Direction</key>
+	<string>方向</string>
 	<key>Disable Unified API</key>
 	<string>停用统一 API</string>
 	<key>Disabled</key>
@@ -352,6 +368,8 @@
 	<string>失败阈值</string>
 	<key>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</key>
 	<string>固定转发连接一个目标。动态转发在此 Mac (-D) 或 SSH 服务器 (-R) 上提供 SOCKS 4/5 代理。</string>
+	<key>Forwarding path</key>
+	<string>转发路径</string>
 	<key>Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.</key>
 	<string>为密钥指定客户端或设备名称。生成的值将存入私有密钥文件并复制到剪贴板。</string>
 	<key>HTTP(S) base URL</key>
@@ -362,6 +380,8 @@
 	<string>健康检查路径</string>
 	<key>Hide API Key</key>
 	<string>隐藏 API 密钥</string>
+	<key>History will be retried automatically.</key>
+	<string>系统将自动重试读取历史记录。</string>
 	<key>Host</key>
 	<string>主机</string>
 	<key>Idle</key>
@@ -376,6 +396,8 @@
 	<string>输入单价</string>
 	<key>Inspect the tokens reported by models served through the Unified API.</key>
 	<string>查看通过统一 API 提供的模型所报告的令牌用量。</string>
+	<key>Inspect traffic through your SSH forwarding paths.</key>
+	<string>查看各条 SSH 转发路径的流量。</string>
 	<key>Invalid endpoint URL</key>
 	<string>端点 URL 无效</string>
 	<key>Keepalive interval</key>
@@ -394,6 +416,8 @@
 	<string>正在加载 ModelMoor 配置</string>
 	<key>Loading ModelMoor…</key>
 	<string>正在加载 ModelMoor…</string>
+	<key>Loading data usage…</key>
+	<string>正在加载流量用量…</string>
 	<key>Local endpoint</key>
 	<string>本地端点</string>
 	<key>Local port forwarding (-L)</key>
@@ -498,6 +522,8 @@
 	<string>尚无可用的模型 ID。</string>
 	<key>No new update was found last time.</key>
 	<string>上次检查未发现新版本。</string>
+	<key>No recorded traffic</key>
+	<string>暂无流量记录</string>
 	<key>No reported usage</key>
 	<string>没有已报告的用量</string>
 	<key>No unified models</key>
@@ -566,6 +592,8 @@
 	<string>就绪，%lld 个模型</string>
 	<key>Ready, 127.0.0.1:%lld, %lld models</key>
 	<string>已就绪，127.0.0.1:%lld，%lld 个模型</string>
+	<key>Received</key>
+	<string>接收</string>
 	<key>Reconnect automatically</key>
 	<string>自动重新连接</string>
 	<key>Refresh</key>
@@ -626,6 +654,8 @@
 	<string>要移除此 API 密钥吗？</string>
 	<key>Remove this subscription account?</key>
 	<string>要移除此订阅账户吗？</string>
+	<key>Removed path</key>
+	<string>已删除的路径</string>
 	<key>Rename Key</key>
 	<string>重命名密钥</string>
 	<key>Replace Key…</key>
@@ -688,6 +718,12 @@
 	<string>所选时间</string>
 	<key>Selected tokens</key>
 	<string>所选令牌数</string>
+	<key>Sent</key>
+	<string>发送</string>
+	<key>Sent and received are relative to this Mac. Counts include forwarded TCP data and SOCKS negotiation, excluding SSH encryption and keepalives. History is sampled every 5 seconds and available for the last 30 days; earlier traffic cannot be recovered. Only timestamps, byte counts and internal path identifiers are stored.</key>
+	<string>发送和接收以本机为参照。统计包括转发的 TCP 数据和 SOCKS 协商数据，不包括 SSH 加密与保活开销。每 5 秒采样一次，可查看最近 30 天的历史；启用统计前的流量无法补录。仅保存时间戳、字节数和内部路径标识。</string>
+	<key>Sent and received data over %@</key>
+	<string>%@内的发送与接收流量</string>
 	<key>Set Key…</key>
 	<string>设置密钥…</string>
 	<key>Settings</key>
@@ -778,6 +814,14 @@
 	<string>%@内的令牌用量</string>
 	<key>Tokens</key>
 	<string>令牌数</string>
+	<key>Total</key>
+	<string>总计</string>
+	<key>Total data</key>
+	<string>总流量</string>
+	<key>Traffic appears here after an SSH forwarding path transfers data.</key>
+	<string>SSH 转发路径传输数据后，流量将显示在此处。</string>
+	<key>Traffic trend</key>
+	<string>流量趋势</string>
 	<key>Type</key>
 	<string>类型</string>
 	<key>USD</key>
@@ -808,6 +852,8 @@
 	<string>用量历史</string>
 	<key>Usage and Settings</key>
 	<string>用量与设置</string>
+	<key>Usage by forwarding path</key>
+	<string>按转发路径统计</string>
 	<key>Usage by model</key>
 	<string>按模型统计用量</string>
 	<key>Usage history stores timestamps, token totals, and internal route and endpoint identifiers. Prompts, responses, model names, headers, and API keys are not stored. Streaming requests appear only when the upstream sends usage data.</key>
@@ -816,6 +862,8 @@
 	<string>用量历史不可用</string>
 	<key>Usage incomplete</key>
 	<string>用量记录不完整</string>
+	<key>Usage section</key>
+	<string>用量分类</string>
 	<key>Use %@</key>
 	<string>使用 %@</string>
 	<key>Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.</key>

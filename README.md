@@ -225,7 +225,7 @@ The macOS app also exposes **Copy Diagnostic Summary** from Settings, the Help m
 
 ## TUI
 
-Running `modelmoor` with no subcommand opens the cross-platform terminal console. `--help` and every explicit command remain conventional CLI commands; `modelmoor-tui` remains available as a standalone compatibility executable. The console has Overview, SSH Connections, API Endpoints, Unified API, Needs Attention, and Settings panes. Use Tab or the mouse to move focus and select rows. Pane text is read-only: the bottom `moor>` shell is the only place to enter commands or modify configuration and runtime state.
+Running `modelmoor` with no subcommand opens the cross-platform terminal console. `--help` and every explicit command remain conventional CLI commands; `modelmoor-tui` remains available as a standalone compatibility executable. The console has Overview, SSH Connections, API Endpoints, Unified API, Subscriptions, Needs Attention, and Settings panes. Use Tab or the mouse to move focus and select rows. Pane text is read-only: the bottom `moor>` shell is the only place to enter commands or modify configuration and runtime state.
 
 The shell supports `add ssh`, `add port`, `add api`, `subs`, `gateway`, `connect [name]`, `disconnect [name]`, `filter <terms>`, `clear-filter`, `refresh`, `status`, and `quit`. Enter `help` in the shell for the full list. `r` refreshes, `?` or F1 opens keyboard help, and `q` quits. The terminal UI always uses ASCII glyphs and borders.
 

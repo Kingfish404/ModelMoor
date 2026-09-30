@@ -25,3 +25,6 @@ Resources/Brand/ModelMoor-AppIcon-Master.png
 Resources/Brand/ModelMoor-AppIcon-1024.png
 Resources/Assets.xcassets/AppIcon.appiconset/*.png
 work/toolchains/
+
+.pi
+.agent

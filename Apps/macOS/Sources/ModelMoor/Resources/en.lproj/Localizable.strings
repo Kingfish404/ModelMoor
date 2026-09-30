@@ -8,6 +8,8 @@
 	<string>%@ has unapplied changes. Apply them before leaving this view?</string>
 	<key>%@ tokens in 24 hours</key>
 	<string>%@ tokens in 24 hours</string>
+	<key>%@ · Sent %@ · Received %@</key>
+	<string>%@ · Sent %@ · Received %@</string>
 	<key>%@, %@</key>
 	<string>%1$@, %2$@</string>
 	<key>%@, %@ tokens</key>
@@ -96,6 +98,8 @@
 	<string>All endpoints</string>
 	<key>All models</key>
 	<string>All models</string>
+	<key>All paths</key>
+	<string>All paths</string>
 	<key>Amount limit (USD)</key>
 	<string>Amount limit (USD)</string>
 	<key>App Preferences</key>
@@ -130,6 +134,8 @@
 	<string>Budget storage unavailable</string>
 	<key>Budget warning</key>
 	<string>Budget warning</string>
+	<key>Bytes</key>
+	<string>Bytes</string>
 	<key>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</key>
 	<string>CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials.</string>
 	<key>Cancel</key>
@@ -262,6 +268,14 @@
 	<string>DGX Spark API</string>
 	<key>Daily</key>
 	<string>Daily</string>
+	<key>Data</key>
+	<string>Data</string>
+	<key>Data history unavailable</key>
+	<string>Data history unavailable</string>
+	<key>Data transferred per %@</key>
+	<string>Data transferred per %@</string>
+	<key>Data usage</key>
+	<string>Data usage</string>
 	<key>DeepSeek API key</key>
 	<string>DeepSeek API key</string>
 	<key>Delete API Endpoint…</key>
@@ -290,6 +304,8 @@
 	<string>Direct Connection</string>
 	<key>Direct HTTP(S) API</key>
 	<string>Direct HTTP(S) API</string>
+	<key>Direction</key>
+	<string>Direction</string>
 	<key>Disable Unified API</key>
 	<string>Disable Unified API</string>
 	<key>Disabled</key>
@@ -352,6 +368,8 @@
 	<string>Failure threshold</string>
 	<key>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</key>
 	<string>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</string>
+	<key>Forwarding path</key>
+	<string>Forwarding path</string>
 	<key>Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.</key>
 	<string>Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.</string>
 	<key>HTTP(S) base URL</key>
@@ -362,6 +380,8 @@
 	<string>Health path</string>
 	<key>Hide API Key</key>
 	<string>Hide API Key</string>
+	<key>History will be retried automatically.</key>
+	<string>History will be retried automatically.</string>
 	<key>Host</key>
 	<string>Host</string>
 	<key>Idle</key>
@@ -376,6 +396,8 @@
 	<string>Input price</string>
 	<key>Inspect the tokens reported by models served through the Unified API.</key>
 	<string>Inspect the tokens reported by models served through the Unified API.</string>
+	<key>Inspect traffic through your SSH forwarding paths.</key>
+	<string>Inspect traffic through your SSH forwarding paths.</string>
 	<key>Invalid endpoint URL</key>
 	<string>Invalid endpoint URL</string>
 	<key>Keepalive interval</key>
@@ -394,6 +416,8 @@
 	<string>Loading ModelMoor configuration</string>
 	<key>Loading ModelMoor…</key>
 	<string>Loading ModelMoor…</string>
+	<key>Loading data usage…</key>
+	<string>Loading data usage…</string>
 	<key>Local endpoint</key>
 	<string>Local endpoint</string>
 	<key>Local port forwarding (-L)</key>
@@ -498,6 +522,8 @@
 	<string>No model IDs are available yet.</string>
 	<key>No new update was found last time.</key>
 	<string>No new update was found last time.</string>
+	<key>No recorded traffic</key>
+	<string>No recorded traffic</string>
 	<key>No reported usage</key>
 	<string>No reported usage</string>
 	<key>No unified models</key>
@@ -566,6 +592,8 @@
 	<string>Ready, %lld models</string>
 	<key>Ready, 127.0.0.1:%lld, %lld models</key>
 	<string>Ready, 127.0.0.1:%lld, %lld models</string>
+	<key>Received</key>
+	<string>Received</string>
 	<key>Reconnect automatically</key>
 	<string>Reconnect automatically</string>
 	<key>Refresh</key>
@@ -626,6 +654,8 @@
 	<string>Remove this API key?</string>
 	<key>Remove this subscription account?</key>
 	<string>Remove this subscription account?</string>
+	<key>Removed path</key>
+	<string>Removed path</string>
 	<key>Rename Key</key>
 	<string>Rename Key</string>
 	<key>Replace Key…</key>
@@ -688,6 +718,12 @@
 	<string>Selected time</string>
 	<key>Selected tokens</key>
 	<string>Selected tokens</string>
+	<key>Sent</key>
+	<string>Sent</string>
+	<key>Sent and received are relative to this Mac. Counts include forwarded TCP data and SOCKS negotiation, excluding SSH encryption and keepalives. History is sampled every 5 seconds and available for the last 30 days; earlier traffic cannot be recovered. Only timestamps, byte counts and internal path identifiers are stored.</key>
+	<string>Sent and received are relative to this Mac. Counts include forwarded TCP data and SOCKS negotiation, excluding SSH encryption and keepalives. History is sampled every 5 seconds and available for the last 30 days; earlier traffic cannot be recovered. Only timestamps, byte counts and internal path identifiers are stored.</string>
+	<key>Sent and received data over %@</key>
+	<string>Sent and received data over %@</string>
 	<key>Set Key…</key>
 	<string>Set Key…</string>
 	<key>Settings</key>
@@ -778,6 +814,14 @@
 	<string>Token usage over %@</string>
 	<key>Tokens</key>
 	<string>Tokens</string>
+	<key>Total</key>
+	<string>Total</string>
+	<key>Total data</key>
+	<string>Total data</string>
+	<key>Traffic appears here after an SSH forwarding path transfers data.</key>
+	<string>Traffic appears here after an SSH forwarding path transfers data.</string>
+	<key>Traffic trend</key>
+	<string>Traffic trend</string>
 	<key>Type</key>
 	<string>Type</string>
 	<key>USD</key>
@@ -808,6 +852,8 @@
 	<string>Usage History</string>
 	<key>Usage and Settings</key>
 	<string>Usage and Settings</string>
+	<key>Usage by forwarding path</key>
+	<string>Usage by forwarding path</string>
 	<key>Usage by model</key>
 	<string>Usage by model</string>
 	<key>Usage history stores timestamps, token totals, and internal route and endpoint identifiers. Prompts, responses, model names, headers, and API keys are not stored. Streaming requests appear only when the upstream sends usage data.</key>
@@ -816,6 +862,8 @@
 	<string>Usage history unavailable</string>
 	<key>Usage incomplete</key>
 	<string>Usage incomplete</string>
+	<key>Usage section</key>
+	<string>Usage section</string>
 	<key>Use %@</key>
 	<string>Use %@</string>
 	<key>Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.</key>

@@ -19,8 +19,9 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", exact: "2.101.3"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.6.1"),
-        // The TUI uses SwiftTerm's portable terminal core. CI removes the
-        // optional Metal resource declaration after SwiftPM resolves it.
+        // The TUI uses SwiftTerm's portable terminal core. CI applies
+        // Scripts/patch-termkit-swiftpm.sh after SwiftPM resolves it, which
+        // excludes SwiftTerm's optional Metal shader from the target.
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", exact: "1.20.0"),
         .package(
             url: "https://github.com/migueldeicaza/TermKit.git",
@@ -33,7 +34,11 @@ let package = Package(
         .target(name: "ModelMoorCore"),
         .target(
             name: "ModelMoorSystem",
-            dependencies: ["ModelMoorCore"]
+            dependencies: [
+                "ModelMoorCore",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio")
+            ]
         ),
         .target(
             name: "ModelMoorGateway",

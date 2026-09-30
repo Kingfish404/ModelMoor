@@ -6,18 +6,18 @@ PROJECT_DIR="${SCRIPT_DIR:h}"
 BUILD_PROFILE="${MODELMOOR_BUILD_PROFILE:-${1:-production}}"
 
 case "$BUILD_PROFILE" in
-  production)
-    APP_OUTPUT_DIR="$PROJECT_DIR/.build/app"
-    APP_BUNDLE_NAME="ModelMoor.app"
-    ;;
-  development)
-    APP_OUTPUT_DIR="$PROJECT_DIR/.build/app-dev"
-    APP_BUNDLE_NAME="ModelMoor Dev.app"
-    ;;
-  *)
-    print -u2 "error: build profile must be 'production' or 'development'"
-    exit 1
-    ;;
+production)
+  APP_OUTPUT_DIR="$PROJECT_DIR/.build/app"
+  APP_BUNDLE_NAME="ModelMoor.app"
+  ;;
+development)
+  APP_OUTPUT_DIR="$PROJECT_DIR/.build/app-dev"
+  APP_BUNDLE_NAME="ModelMoor Dev.app"
+  ;;
+*)
+  print -u2 "error: build profile must be 'production' or 'development'"
+  exit 1
+  ;;
 esac
 
 APP_DIR="$APP_OUTPUT_DIR/$APP_BUNDLE_NAME"
@@ -27,6 +27,9 @@ if [[ -d /Applications/Xcode.app/Contents/Developer ]]; then
 fi
 export CLANG_MODULE_CACHE_PATH="$PROJECT_DIR/.build/module-cache"
 export SWIFTPM_MODULECACHE_OVERRIDE="$PROJECT_DIR/.build/module-cache"
+# `--build-system native` is deprecated in Swift 6.4 but still required: the
+# default `swiftbuild` engine cannot build the localized resources of
+# Apps/macOS yet ("Multiple commands produce ... en.lproj/Localizable.strings").
 BUILD_OPTIONS=(--disable-sandbox --cache-path "$PROJECT_DIR/.build/cache" --build-system "${MODELMOOR_BUILD_SYSTEM:-native}")
 
 cd "$PROJECT_DIR"
@@ -34,10 +37,10 @@ cd "$PROJECT_DIR"
 CLIPROXY_BINARY="$("$PROJECT_DIR/Scripts/fetch-cliproxyapi.sh")"
 # CLI ships from the root package; the macOS app lives in Apps/macOS so the
 # root package stays buildable on Linux (docs/PLAN.md milestone B).
-swift build $BUILD_OPTIONS -c release --product modelmoor
-swift build $BUILD_OPTIONS -c release --package-path Apps/macOS
-CLI_BINARY="$(swift build $BUILD_OPTIONS -c release --show-bin-path)/modelmoor"
-APP_BINARY="$(swift build $BUILD_OPTIONS -c release --package-path Apps/macOS --show-bin-path)/ModelMoorApp"
+swift build "${BUILD_OPTIONS[@]}" -c release --product modelmoor
+swift build "${BUILD_OPTIONS[@]}" -c release --package-path Apps/macOS
+CLI_BINARY="$(swift build "${BUILD_OPTIONS[@]}" -c release --show-bin-path)/modelmoor"
+APP_BINARY="$(swift build "${BUILD_OPTIONS[@]}" -c release --package-path Apps/macOS --show-bin-path)/ModelMoorApp"
 APP_RESOURCE_BUNDLE="${APP_BINARY:h}/ModelMoorApp_ModelMoor.bundle"
 
 if [[ "$APP_BINARY" -ef "$CLI_BINARY" ]]; then
@@ -81,7 +84,7 @@ xcrun actool "$PROJECT_DIR/Resources/Assets.xcassets" \
   --platform macosx \
   --minimum-deployment-target 14.0 \
   --app-icon AppIcon \
-  --output-partial-info-plist "$APP_OUTPUT_DIR/asset-info.plist"
+  --output-partial-info-plist "$APP_OUTPUT_DIR/asset-info.plist" >/dev/null
 
 SIGN_IDENTITY="${MODELMOOR_CODE_SIGN_IDENTITY:--}"
 print "Signing with $SIGN_IDENTITY"

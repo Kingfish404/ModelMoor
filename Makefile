@@ -22,6 +22,10 @@ endif
 export CLANG_MODULE_CACHE_PATH := $(MODULE_CACHE)
 export SWIFTPM_MODULECACHE_OVERRIDE := $(MODULE_CACHE)
 
+# `--build-system native` is deprecated in Swift 6.4 but still required:
+# SwiftPM's default `swiftbuild` engine cannot build Apps/macOS yet (it fails
+# with "Multiple commands produce ... en.lproj/Localizable.strings" for the
+# localized resources).
 BUILD_OPTIONS := --disable-sandbox --cache-path $(CACHE_DIR) --build-system native
 
 .DEFAULT_GOAL := help

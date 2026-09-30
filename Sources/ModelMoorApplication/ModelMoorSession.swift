@@ -52,6 +52,7 @@ public actor ModelMoorSession {
     private let interactiveSecretStore: any ModelMoorSecretStore
     private let nonInteractiveSecretStore: any ModelMoorSecretStore
     private let deletionCoordinator: ConfigurationDeletionCoordinator
+    public let dataUsageStore: DataUsageStore
     private let usageStore: TokenUsageStore
     private let inspector: any APIInspecting
     private let sshConfigScanner: any SSHConfigScanning
@@ -129,6 +130,7 @@ public actor ModelMoorSession {
             store: resolvedStore,
             secretStore: resolvedSecretStore
         )
+        self.dataUsageStore = DataUsageStore(directoryURL: profile.tokenUsageURL.deletingLastPathComponent())
         self.usageStore = usageStore ?? TokenUsageStore(fileURL: profile.tokenUsageURL)
         self.inspector = inspector
         self.sshConfigScanner = sshConfigScanner
@@ -864,7 +866,8 @@ public actor ModelMoorSession {
     private func ensureTunnelService() {
         guard tunnelService == nil else { return }
         tunnelService = TunnelService(
-            commandBuilder: SSHCommandBuilder(controlDirectoryURL: profile.runtimeDirectoryURL)
+            commandBuilder: SSHCommandBuilder(controlDirectoryURL: profile.runtimeDirectoryURL),
+            dataUsageStore: dataUsageStore
         ) { [weak self] status in
             Task { await self?.handleTunnelStatus(status) }
         }

@@ -5,6 +5,8 @@ import SwiftUI
 
 struct UsageDetailView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var section = "Models"
+    @State private var dataRefreshGeneration = 0
     @State private var timeRange: UsageTimeRange = .day
     @State private var routeID: UUID?
     @State private var endpointID: UUID?
@@ -18,23 +20,34 @@ struct UsageDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                header
-                filters
-                summary
-                trend
-                if !availableRoutes.isEmpty {
-                    ModelBudgetUsageView(routes: availableRoutes.filter { routeID == nil || $0.id == routeID })
+                Picker("Usage section", selection: $section) {
+                    Text("Models").tag("Models")
+                    Text("Data").tag("Data")
+                }.pickerStyle(.segmented).frame(maxWidth: 260)
+                if section == "Data" {
+                    DataUsageView(refreshGeneration: dataRefreshGeneration)
+                } else {
+                    header
+                    filters
+                    summary
+                    trend
+                    if !availableRoutes.isEmpty {
+                        ModelBudgetUsageView(routes: availableRoutes.filter { routeID == nil || $0.id == routeID })
+                    }
+                    breakdown
+                    privacyNote
                 }
-                breakdown
-                privacyNote
             }
             .frame(maxWidth: 900, alignment: .leading)
             .padding(28)
         }
         .navigationTitle("Usage")
-        .refreshable { await reload(showProgress: false, query: query) }
+        .refreshable {
+            if section == "Data" { dataRefreshGeneration &+= 1 }
+            else { await reload(showProgress: false, query: query) }
+        }
         .task(id: refreshQuery) {
-            guard model.isUIRefreshActive else { return }
+            guard model.isUIRefreshActive, section == "Models" else { return }
             let requestedQuery = query
             let queryChanged = lastLoadedQuery != requestedQuery
             if queryChanged {
@@ -269,7 +282,7 @@ struct UsageDetailView: View {
     private var refreshQuery: UsageRefreshQuery {
         UsageRefreshQuery(
             query: query,
-            isActive: model.isUIRefreshActive,
+            isActive: model.isUIRefreshActive && section == "Models",
             lastMinute: model.tokenUsage.lastMinute,
             lastHour: model.tokenUsage.lastHour,
             lastDay: model.tokenUsage.lastDay,
@@ -366,7 +379,7 @@ private struct UsageHeadlineMetric: View {
     }
 }
 
-private enum UsageTimeRange: String, CaseIterable, Identifiable {
+enum UsageTimeRange: String, CaseIterable, Identifiable {
     case minute
     case hour
     case day

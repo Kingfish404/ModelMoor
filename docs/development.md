@@ -77,7 +77,7 @@ Development builds disable login launch and update checks. Both macOS profiles u
 
 Runtime API credentials never access Keychain. Default local builds also require no Keychain access; an explicitly selected signing identity may use its private key during signing.
 
-The build uses `--disable-sandbox`, the `native` SwiftPM backend, and a project-local cache (`.build/cache`, `.build/module-cache`). This avoids the SwiftTerm Metal compilation failure in the default Xcode backend. `make run-dev` needs no additional flags. Bundle builds can override the backend with `MODELMOOR_BUILD_SYSTEM`.
+The build uses `--disable-sandbox`, the `native` SwiftPM backend, and a project-local cache (`.build/cache`, `.build/module-cache`). The `native` backend is deprecated in Swift 6.4 but is still required: SwiftPM's default `swiftbuild` engine cannot build `Apps/macOS` yet (it fails with `error: Multiple commands produce ... en.lproj/Localizable.strings` for the localized sidecars). `Scripts/patch-termkit-swiftpm.sh` excludes SwiftTerm's optional Metal shader from its target, so no backend has to compile it; run that script once after resolving dependencies locally (CI and the release workflow already do). `make run-dev` needs no additional flags. Bundle builds can override the backend with `MODELMOOR_BUILD_SYSTEM`.
 
 `Apps/macOS/Sources/ModelMoor/Resources/Localizable.xcstrings` is the authoritative localization source. SwiftPM command-line builds currently copy that editor catalog instead of compiling it, so the generated `en.lproj` and `zh-Hans.lproj` `Localizable.strings` sidecars remain checked in for runtime compatibility. Run `Scripts/sync-localizations.sh` after editing the catalog. `make localization-check` compiles the catalog with Xcode, compares both sidecars semantically, then uses Swift compiler `.stringsdata` extraction to ensure every static SwiftUI key is present. Technical values and user data must use `Text(verbatim:)` rather than becoming localization keys. Final app assembly copies only the two compiled `.lproj` resources, not the raw catalog.
 
@@ -85,7 +85,7 @@ The build uses `--disable-sandbox`, the `native` SwiftPM backend, and a project-
 
 ```text
 Sources/
-  ModelMoorCore/     Pure domain: configuration schema v2, validation,
+  ModelMoorCore/     Pure domain: configuration schema v3, validation,
                      migration, cascade rules, diagnostics types, endpoint
                      routing data, tunnel status. Foundation only — no
                      Darwin/Glibc, Security, Network, AppKit or SwiftUI.

@@ -9,6 +9,7 @@ import Glibc
 public actor TunnelService {
     public typealias StatusHandler = @Sendable (TunnelStatus) -> Void
 
+    private let dataUsageStore: DataUsageStore?
     private let commandBuilder: SSHCommandBuilder
     private let localPortPreflight: @Sendable (TunnelConfiguration) throws -> Void
     private let statusHandler: StatusHandler
@@ -19,9 +20,11 @@ public actor TunnelService {
 
     public init(
         commandBuilder: SSHCommandBuilder = SSHCommandBuilder(),
+        dataUsageStore: DataUsageStore? = nil,
         localPortPreflight: @escaping @Sendable (TunnelConfiguration) throws -> Void = TunnelService.systemLocalPortPreflight,
         statusHandler: @escaping StatusHandler
     ) {
+        self.dataUsageStore = dataUsageStore
         self.commandBuilder = commandBuilder
         self.localPortPreflight = localPortPreflight
         self.statusHandler = statusHandler
@@ -194,13 +197,49 @@ public actor TunnelService {
         }
 
         let process = try SSHProcess.launchSupervised(commandBuilder.command(for: tunnel))
+        var forwardingTunnel = tunnel
+        var relays: [(UUID, ForwardTrafficRelay)] = []
+        var lastSample = Date()
         var connected = false
         var connectedAt: Date?
         do {
             try await waitUntilMasterIsReady(process, tunnel: tunnel)
 
+            if dataUsageStore != nil {
+                var remotePolicy: RemoteForwardPolicy?
+                if tunnel.enabledMappings.contains(where: { $0.direction == .reverseDynamic }) {
+                    let effective = try await SSHProcess.runCapturingBothStreams(SSHCommand(
+                        executableURL: commandBuilder.executableURL,
+                        arguments: ["-G", tunnel.sshHost]
+                    ))
+                    guard effective.terminationStatus == 0 else { throw RemoteForwardPolicy.PolicyError.unavailable }
+                    remotePolicy = try RemoteForwardPolicy(effectiveConfiguration: effective.errorText)
+                }
+                for index in forwardingTunnel.mappings.indices {
+                    let mapping = tunnel.mappings[index]
+                    guard mapping.enabled else { continue }
+                    let relay = ForwardTrafficRelay()
+                    relays.append((mapping.id, relay))
+                    if mapping.direction.listensLocally {
+                        // Reserve an ephemeral port before asking OpenSSH to bind it.
+                        // ExitOnForwardFailure handles a competing bind by retrying.
+                        let reservation = ForwardTrafficRelay()
+                        try await reservation.start(port: 0, destinationHost: "127.0.0.1", destinationPort: 1, inboundIsSent: true)
+                        let internalPort = reservation.port
+                        await reservation.stop()
+                        forwardingTunnel.mappings[index].listenHost = "127.0.0.1"
+                        forwardingTunnel.mappings[index].listenPort = internalPort
+                        try await relay.start(port: mapping.listenPort, destinationHost: "127.0.0.1", destinationPort: internalPort, inboundIsSent: true)
+                    } else {
+                        try await relay.start(port: 0, destinationHost: mapping.destinationHost, destinationPort: mapping.destinationPort, inboundIsSent: false, socks: mapping.direction == .reverseDynamic, remotePolicy: remotePolicy)
+                        forwardingTunnel.mappings[index].direction = .remote
+                        forwardingTunnel.mappings[index].destinationHost = "127.0.0.1"
+                        forwardingTunnel.mappings[index].destinationPort = relay.port
+                    }
+                }
+            }
             let forward = try await SSHProcess.run(
-                commandBuilder.controlCommand(.forward, for: tunnel)
+                commandBuilder.controlCommand(.forward, for: forwardingTunnel)
             )
             guard forward.terminationStatus == 0 else {
                 let detail = forward.errorText.isEmpty
@@ -221,6 +260,11 @@ public actor TunnelService {
             while process.isRunning {
                 try Task.checkCancellation()
                 try await Task.sleep(for: .seconds(1))
+                let now = Date()
+                if now.timeIntervalSince(lastSample) >= 5 {
+                    await recordTraffic(relays, tunnelID: tunnel.id, at: now)
+                    lastSample = now
+                }
             }
             try Task.checkCancellation()
 
@@ -235,7 +279,9 @@ public actor TunnelService {
                 category: SSHFailureDetail.category(for: tunnel, errorText: process.errorText, default: .processExited)
             )
         } catch {
-            await closeMaster(for: tunnel, process: process)
+            for (_, relay) in relays { await relay.stop() }
+            await recordTraffic(relays, tunnelID: tunnel.id, at: Date())
+            await closeMaster(for: forwardingTunnel, process: process)
             if error is CancellationError {
                 throw error
             }
@@ -246,6 +292,19 @@ public actor TunnelService {
                 throw SSHSessionFailure(detail: error.localizedDescription, resetBackoff: false, category: .unknown)
             }
             throw error
+        }
+    }
+
+    private func recordTraffic(_ relays: [(UUID, ForwardTrafficRelay)], tunnelID: UUID, at date: Date) async {
+        guard let dataUsageStore else { return }
+        for (mappingID, relay) in relays {
+            let bytes = relay.counter.drain()
+            do {
+                try await dataUsageStore.record(mappingID: mappingID, tunnelID: tunnelID, sent: bytes.sent, received: bytes.received, at: date)
+            } catch {
+                // The store retains the pending sample and retries on the next
+                // sample or history query. Report queries surface write failures.
+            }
         }
     }
 
