@@ -35,22 +35,22 @@ jobs:
         run: ./Scripts/patch-termkit-swiftpm.sh
 
       - name: Run root tests
-        run: swift test --disable-sandbox --cache-path .build/cache
+        run: make test-root
 
       - name: Run macOS GUI package tests
-        run: swift test --package-path Apps/macOS --disable-sandbox --cache-path .build/cache
+        run: make test-app
 
       - name: Check localization catalog and coverage
         run: make localization-check
 
       - name: Run TUI package tests
-        run: swift test --package-path Apps/TUI --disable-sandbox --cache-path .build/cache
+        run: make test-tui
 
       - name: Build release TUI
         run: make tui
 
       - name: Build release default CLI TUI
-        run: swift build -c release --product modelmoor
+        run: make cli
 
       - name: Default CLI TUI terminal restoration smoke test
         run: python3 Scripts/test-tui-terminal.py "$(swift build -c release --show-bin-path)/modelmoor"

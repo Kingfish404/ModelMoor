@@ -358,6 +358,8 @@
 	<string>启用端点</string>
 	<key>Endpoint not found</key>
 	<string>未找到端点</string>
+	<key>Endpoint type</key>
+	<string>端点类型</string>
 	<key>Enter model ID manually</key>
 	<string>手动输入模型 ID</string>
 	<key>Expand Others</key>
@@ -574,6 +576,8 @@
 	<string>未配置单价</string>
 	<key>Provider credentials are managed in Subscription.</key>
 	<string>提供商凭据在“订阅”中管理。</string>
+	<key>Provider credentials stay in ModelMoor's secret store. No subscription helper runs for this endpoint.</key>
+	<string>提供商凭据保存在 ModelMoor 的私密凭据存储中。此端点不会运行订阅辅助进程。</string>
 	<key>Public model</key>
 	<string>公开模型</string>
 	<key>Public model name “%@” is already in use.</key>
@@ -744,6 +748,8 @@
 	<string>显示或隐藏边栏</string>
 	<key>Show or hide the sidebar</key>
 	<string>显示或隐藏边栏</string>
+	<key>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth credentials are stored in ModelMoor's private secret store and are not written to local agent files.</key>
+	<string>登录在提供商网站上完成，ModelMoor 不会接收你的密码。OAuth 凭据保存在 ModelMoor 的私密凭据存储中，不会写入本地代理文件。</string>
 	<key>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth refresh credentials are stored in ModelMoor's private application-data directory because the bundled helper requires file-backed credentials.</key>
 	<string>登录在提供商的网站上完成，ModelMoor 不会接收你的密码。由于内置辅助程序需要基于文件的凭据，OAuth 刷新凭据会存储在 ModelMoor 的私有应用数据目录中。</string>
 	<key>Software Updates</key>

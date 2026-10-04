@@ -225,8 +225,8 @@ private final class GrokBuildLoginProcessRunner: @unchecked Sendable {
 
     func waitForExit(onURL: @escaping @Sendable (URL) -> Void) -> Result<Data, Error> {
         guard let processAndPipe = lock.withLock({ () -> (Process, Pipe)? in
-            guard let process, let output else { return nil }
-            return (process, output)
+            guard let runningProcess = self.process, let outputPipe = self.output else { return nil }
+            return (runningProcess, outputPipe)
         }) else { return .failure(GrokBuildSubscriptionError.launchFailed) }
         let (process, pipe) = processAndPipe
         var buffered = ""

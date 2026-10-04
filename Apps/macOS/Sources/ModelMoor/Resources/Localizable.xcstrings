@@ -1,6 +1,9 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Endpoint type": {"extractionState": "manual", "localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "端点类型"}}}},
+    "Provider credentials stay in ModelMoor's secret store. No subscription helper runs for this endpoint.": {"extractionState": "manual", "localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "提供商凭据保存在 ModelMoor 的私密凭据存储中。此端点不会运行订阅辅助进程。"}}}},
+    "Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth credentials are stored in ModelMoor's private secret store and are not written to local agent files.": {"extractionState": "manual", "localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "登录在提供商网站上完成，ModelMoor 不会接收你的密码。OAuth 凭据保存在 ModelMoor 的私密凭据存储中，不会写入本地代理文件。"}}}},
     "Bytes": {"extractionState": "manual", "localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "字节"}}}},
     "Direction": {"extractionState": "manual", "localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "方向"}}}},
     "Total": {"extractionState": "manual", "localizations": {"zh-Hans": {"stringUnit": {"state": "translated", "value": "总计"}}}},

@@ -73,7 +73,7 @@ cp "$APP_PACKAGE_CHECKOUTS/swift-nio/Sources/NIOPosix/PrivacyInfo.xcprivacy" \
   "$APP_DIR/Contents/Resources/PrivacyInfo.xcprivacy"
 cp "$APP_PACKAGE_CHECKOUTS/swift-nio/LICENSE.txt" \
   "$APP_DIR/Contents/Resources/Licenses/SwiftNIO-LICENSE.txt"
-cp "$PROJECT_DIR/third_party/magpie/LICENSE" \
+cp "$PROJECT_DIR/Support/Licenses/Magpie-LICENSE.txt" \
   "$APP_DIR/Contents/Resources/Licenses/Magpie-LICENSE.txt"
 cp "$APP_PACKAGE_CHECKOUTS/swift-nio/Sources/CNIOLLHTTP/LICENSE" \
   "$APP_DIR/Contents/Resources/Licenses/CNIOLLHTTP-LICENSE.txt"

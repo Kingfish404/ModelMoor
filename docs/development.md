@@ -124,7 +124,7 @@ Resources/
   Assets.xcassets    App icon and asset catalog
 ```
 
-`ModelMoorCore` is a plain Swift package module shared by the app, CLI, and Gateway. Keep it free of AppKit/SwiftUI/Darwin/Glibc/Security/Network imports — platform capabilities belong in `ModelMoorSystem` behind `#if canImport(...)` shims. `ModelMoorGateway` is an in-process library rather than a daemon and directly depends only on SwiftNIO's `NIOCore`, `NIOPosix`, and `NIOHTTP1` products.
+`ModelMoorCore` is a plain Swift package module shared by the app, CLI, and Gateway. Keep it free of AppKit/SwiftUI/Darwin/Glibc/Security/Network imports — platform capabilities belong in `ModelMoorSystem` behind `#if canImport(...)` shims. `ModelMoorGateway` is an in-process library rather than a daemon. It depends on `ModelMoorCore`, `ModelMoorSystem` for native subscription adapters and credential refresh, and SwiftNIO's `NIOCore`, `NIOPosix`, and `NIOHTTP1` products. `ModelMoorSystem` must not import Gateway or Application; Gateway must not import Application. UI and terminal imports remain forbidden in all three layers.
 
 `make architecture-check` enforces these import boundaries before the root tests. It prefers `rg` and falls back to POSIX `grep`, so the same check runs in the minimal Ubuntu CI containers without adding a search-tool dependency. Keep Darwin/Glibc shims, signal handling, platform paths, secrets and other operating-system behavior in `ModelMoorSystem`; TermKit is linked only by the root `ModelMoorTUI` target and sources under `Apps/TUI`.
 

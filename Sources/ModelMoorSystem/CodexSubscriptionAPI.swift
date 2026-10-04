@@ -1,5 +1,5 @@
 // Codex subscription request details adapted from yetone/magpie (MIT License,
-// Copyright 2026 yetone). See third_party/magpie/LICENSE.
+// Copyright 2026 yetone). See Support/Licenses/Magpie-LICENSE.txt.
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking

@@ -20,6 +20,7 @@ final class ModelMoorCoreTests: XCTestCase {
 
     func testSubscriptionOAuthCreatesProviderScopedPKCEAuthorization() throws {
         let redirect = URL(string: "http://127.0.0.1:1455/auth/callback")!
+        #if canImport(CryptoKit)
         let authorization = try SubscriptionOAuthClient().begin(provider: .codex, redirectURI: redirect)
         let query = try XCTUnwrap(URLComponents(url: authorization.url, resolvingAgainstBaseURL: false)?.queryItems)
         let values = Dictionary(uniqueKeysWithValues: query.compactMap { item in item.value.map { (item.name, $0) } })
@@ -31,6 +32,12 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertFalse(authorization.codeVerifier.isEmpty)
         XCTAssertNotEqual(values["code_challenge"], authorization.codeVerifier)
         XCTAssertEqual(values["originator"], "codex_cli_rs")
+        #else
+        // Linux does not provide CryptoKit; verify the explicit failure path.
+        XCTAssertThrowsError(try SubscriptionOAuthClient().begin(provider: .codex, redirectURI: redirect)) {
+            XCTAssertEqual($0 as? SubscriptionOAuthError, .unsupportedCrypto)
+        }
+        #endif
     }
 
     func testGrokBuildDeviceLoginStoresCredentialsFromAnIsolatedProfile() async throws {

@@ -358,6 +358,8 @@
 	<string>Endpoint enabled</string>
 	<key>Endpoint not found</key>
 	<string>Endpoint not found</string>
+	<key>Endpoint type</key>
+	<string>Endpoint type</string>
 	<key>Enter model ID manually</key>
 	<string>Enter model ID manually</string>
 	<key>Expand Others</key>
@@ -574,6 +576,8 @@
 	<string>Pricing not configured</string>
 	<key>Provider credentials are managed in Subscription.</key>
 	<string>Provider credentials are managed in Subscription.</string>
+	<key>Provider credentials stay in ModelMoor's secret store. No subscription helper runs for this endpoint.</key>
+	<string>Provider credentials stay in ModelMoor's secret store. No subscription helper runs for this endpoint.</string>
 	<key>Public model</key>
 	<string>Public model</string>
 	<key>Public model name “%@” is already in use.</key>
@@ -744,6 +748,8 @@
 	<string>Show or hide sidebar</string>
 	<key>Show or hide the sidebar</key>
 	<string>Show or hide the sidebar</string>
+	<key>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth credentials are stored in ModelMoor's private secret store and are not written to local agent files.</key>
+	<string>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth credentials are stored in ModelMoor's private secret store and are not written to local agent files.</string>
 	<key>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth refresh credentials are stored in ModelMoor's private application-data directory because the bundled helper requires file-backed credentials.</key>
 	<string>Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth refresh credentials are stored in ModelMoor's private application-data directory because the bundled helper requires file-backed credentials.</string>
 	<key>Software Updates</key>

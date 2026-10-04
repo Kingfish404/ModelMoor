@@ -1,5 +1,5 @@
 // OAuth flow details adapted from yetone/magpie (MIT License, Copyright 2026 yetone).
-// See third_party/magpie/LICENSE for the full license text.
+// See Support/Licenses/Magpie-LICENSE.txt for the full license text.
 import Foundation
 import ModelMoorCore
 #if canImport(CryptoKit)

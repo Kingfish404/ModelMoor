@@ -17,15 +17,29 @@ fi
 
 mkdir -p "$EXTRACTION_DIR" "$CACHE_DIR" "$MODULE_CACHE" "$SCRATCH_DIR"
 
-DEVELOPER_DIR="$XCODE_DEVELOPER_DIR" \
-CLANG_MODULE_CACHE_PATH="$MODULE_CACHE" \
-SWIFTPM_MODULECACHE_OVERRIDE="$MODULE_CACHE" \
+export DEVELOPER_DIR="$XCODE_DEVELOPER_DIR"
+export CLANG_MODULE_CACHE_PATH="$MODULE_CACHE"
+export SWIFTPM_MODULECACHE_OVERRIDE="$MODULE_CACHE"
+
+# This build uses separate checkouts; patch them just like the main packages.
+swift package \
+  --package-path "$PROJECT_DIR/Apps/macOS" \
+  --scratch-path "$SCRATCH_DIR" \
+  --disable-sandbox \
+  --cache-path "$CACHE_DIR" \
+  resolve
+(
+  cd "$PROJECT_DIR"
+  SWIFTPM_PATCH_ROOTS="$SCRATCH_DIR/checkouts" ./Scripts/patch-termkit-swiftpm.sh
+)
+
 swift build \
   --package-path "$PROJECT_DIR/Apps/macOS" \
   --scratch-path "$SCRATCH_DIR" \
   --disable-sandbox \
   --disable-build-manifest-caching \
   --cache-path "$CACHE_DIR" \
+  --build-system native \
   --jobs 1 \
   -Xswiftc -emit-localized-strings \
   -Xswiftc -emit-localized-strings-path \

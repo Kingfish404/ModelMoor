@@ -1,5 +1,5 @@
 // Claude Code subscription execution follows yetone/magpie's MIT-licensed
-// approach of invoking the genuine Claude Code CLI. See third_party/magpie/LICENSE.
+// approach of invoking the genuine Claude Code CLI. See Support/Licenses/Magpie-LICENSE.txt.
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking

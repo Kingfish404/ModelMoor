@@ -26,6 +26,11 @@ check_imports \
   "AppKit|SwiftUI|Security|Network|LocalAuthentication|Darwin|Glibc|TermKit|ModelMoorSystem|ModelMoorGateway|ModelMoorApplication"
 
 check_imports \
+  "ModelMoorSystem" \
+  "Sources/ModelMoorSystem" \
+  "AppKit|SwiftUI|TermKit|ModelMoorGateway|ModelMoorApplication"
+
+check_imports \
   "ModelMoorApplication" \
   "Sources/ModelMoorApplication" \
   "AppKit|SwiftUI|Security|Network|LocalAuthentication|Darwin|Glibc|TermKit"
@@ -33,7 +38,7 @@ check_imports \
 check_imports \
   "ModelMoorGateway" \
   "Sources/ModelMoorGateway" \
-  "AppKit|SwiftUI|Security|Network|LocalAuthentication|Darwin|Glibc|TermKit|ModelMoorSystem|ModelMoorApplication"
+  "AppKit|SwiftUI|Security|Network|LocalAuthentication|Darwin|Glibc|TermKit|ModelMoorApplication"
 
 check_imports \
   "modelmoor CLI" \
@@ -45,4 +50,4 @@ check_imports \
   "Apps/TUI/Sources/TUIWidgets" \
   "AppKit|SwiftUI|Security|Network|LocalAuthentication|Darwin|Glibc|TermKit"
 
-echo "Layering check passed: Core/Application/Gateway/CLI/TUIWidgets boundaries are clean"
+echo "Layering check passed: Core/System/Application/Gateway/CLI/TUIWidgets boundaries are clean"
