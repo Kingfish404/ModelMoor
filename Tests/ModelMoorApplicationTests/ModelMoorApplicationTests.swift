@@ -68,13 +68,8 @@ final class ModelMoorApplicationTests: XCTestCase {
         inspector: any APIInspecting = APIInspector(),
         sshConfigScanner: any SSHConfigScanning = SSHConfigScanner(),
         gatewayCoordinator: GatewayServiceCoordinator? = nil,
-        cliProxyServiceFactory: @escaping CLIProxyServiceFactory = { dataDirectoryURL, handler in
-            CLIProxyService(dataDirectoryURL: dataDirectoryURL, stateHandler: handler)
-        },
-        cliProxyManagementFactory: @escaping CLIProxyManagementFactory = { port, password in
-            CLIProxyManagementClient(port: port, managementPassword: password)
-        },
-        subscriptionUsageProvider: (any SubscriptionUsageProviding)? = nil
+        grokExecutableURL: URL? = GrokBuildSubscriptionAPIAdapter.findExecutable(),
+        kimiExecutableURL: URL? = KimiCodeSubscriptionAPIAdapter.findExecutable()
     ) throws -> (ModelMoorSession, URL) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ModelMoorSessionTests-\(name)", isDirectory: true)
@@ -99,9 +94,8 @@ final class ModelMoorApplicationTests: XCTestCase {
                 .appendingPathComponent("runtime", isDirectory: true)
                 .appendingPathComponent("runtime-owner.lock"),
             gatewayCoordinator: gatewayCoordinator,
-            cliProxyServiceFactory: cliProxyServiceFactory,
-            cliProxyManagementFactory: cliProxyManagementFactory,
-            subscriptionUsageProvider: subscriptionUsageProvider
+            grokExecutableURL: grokExecutableURL,
+            kimiExecutableURL: kimiExecutableURL
         )
         return (session, directory)
     }
@@ -461,132 +455,11 @@ final class ModelMoorApplicationTests: XCTestCase {
         XCTAssertEqual(latest?.configuration.endpoints[0].name, "Update 3")
     }
 
-    func testManagedSubscriptionCommandsWaitForSnapshotDelivery() async throws {
-        let delivery = ManagedSubscriptionDeliveryProbe()
-        let runtimeProbe = FakeCLIProxyRuntimeProbe()
-        let managementState = FakeCLIProxyManagementState()
-        let coordinator = ManagedSubscriptionCoordinator(
-            dataDirectoryURL: FileManager.default.temporaryDirectory,
-            secretStore: UnavailableSecretStore(reason: "unused by shutdown"),
-            diagnostics: DiagnosticLog(),
-            serviceFactory: { _, handler in
-                FakeCLIProxyService(probe: runtimeProbe, stateHandler: handler)
-            },
-            managementFactory: { _, _ in
-                FakeCLIProxyManagementClient(state: managementState)
-            },
-            usageProvider: FakeSubscriptionUsageProvider()
-        ) { _ in
-            await delivery.receiveSnapshot()
-        }
-
-        let command = Task {
-            await coordinator.shutdown()
-            await delivery.markCommandCompleted()
-        }
-        await delivery.waitUntilSnapshotDeliveryStarts()
-        try await Task.sleep(for: .milliseconds(50))
-
-        let completedBeforeDelivery = await delivery.commandCompleted
-        XCTAssertFalse(completedBeforeDelivery)
-
-        await delivery.releaseSnapshotDelivery()
-        await command.value
-        let completedAfterDelivery = await delivery.commandCompleted
-        XCTAssertTrue(completedAfterDelivery)
-    }
-
-    func testManagedSubscriptionLifecycleAndCommandsAreSessionOwned() async throws {
-        let runtimeProbe = FakeCLIProxyRuntimeProbe()
-        let managementState = FakeCLIProxyManagementState()
-        let account = CLIProxyAccount(
-            id: "account-1",
-            name: "codex-account.json",
-            provider: "codex",
-            email: "person@example.com"
-        )
-        await managementState.setAccounts([account])
-        let usageProvider = FakeSubscriptionUsageProvider()
-        let (session, directory) = try makeSession(
-            inspector: ImmediateInspector(),
-            cliProxyServiceFactory: { _, handler in
-                FakeCLIProxyService(probe: runtimeProbe, stateHandler: handler)
-            },
-            cliProxyManagementFactory: { _, _ in
-                FakeCLIProxyManagementClient(state: managementState)
-            },
-            subscriptionUsageProvider: usageProvider
-        )
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        try await session.load()
-        var configuration = await session.snapshot.configuration
-        configuration.gateway.enabled = false
-        configuration.cliProxy.enabled = true
-        configuration.reconcileManagedCLIProxyEndpoint()
-        try await session.saveConfiguration(configuration)
-
-        // Configuration edits alone must not launch a duplicate helper from a
-        // read-only Session. Runtime ownership is the lifecycle boundary.
-        var runtimeMeasurements = await runtimeProbe.measurements
-        XCTAssertEqual(runtimeMeasurements.startCount, 0)
-        try await session.startRuntime(owner: "subscription-test")
-
-        var snapshot = await session.snapshot
-        XCTAssertEqual(snapshot.subscriptions.runtimeState, .running(port: configuration.cliProxy.listenPort))
-        XCTAssertEqual(snapshot.subscriptions.accounts, [account])
-        XCTAssertTrue(snapshot.subscriptions.isUsageProviderAvailable)
-        runtimeMeasurements = await runtimeProbe.measurements
-        XCTAssertEqual(runtimeMeasurements.startCount, 1)
-
-        let login = try await session.startSubscriptionLogin(.codex)
-        XCTAssertEqual(login.url.absoluteString, "https://example.com/device")
-        snapshot = await session.snapshot
-        XCTAssertEqual(snapshot.subscriptions.activeProvider, .codex)
-        XCTAssertEqual(snapshot.subscriptions.activeLogin?.userCode, "ABCD-EFGH")
-
-        await session.cancelSubscriptionLogin()
-        snapshot = await session.snapshot
-        XCTAssertNil(snapshot.subscriptions.activeProvider)
-        XCTAssertNil(snapshot.subscriptions.activeLogin)
-        let cancelledStates = await managementState.cancelledStates
-        XCTAssertEqual(cancelledStates, ["login-state"])
-
-        try await session.setSubscriptionAccountEnabled(account, enabled: false)
-        snapshot = await session.snapshot
-        XCTAssertEqual(snapshot.subscriptions.accounts.first?.disabled, true)
-        XCTAssertTrue(snapshot.subscriptions.updatingAccountIDs.isEmpty)
-
-        await session.refreshSubscriptionUsage()
-        snapshot = await session.snapshot
-        XCTAssertEqual(snapshot.subscriptions.usage[account.id]?.source, "test")
-        XCTAssertFalse(snapshot.subscriptions.isRefreshingUsage)
-
-        await session.suspendRuntime(reason: "test sleep")
-        snapshot = await session.snapshot
-        XCTAssertEqual(snapshot.subscriptions.runtimeState, .stopped)
-        runtimeMeasurements = await runtimeProbe.measurements
-        XCTAssertEqual(runtimeMeasurements.stopCount, 1)
-
-        await session.resumeRuntime()
-        snapshot = await session.snapshot
-        XCTAssertEqual(snapshot.subscriptions.runtimeState, .running(port: configuration.cliProxy.listenPort))
-        runtimeMeasurements = await runtimeProbe.measurements
-        XCTAssertEqual(runtimeMeasurements.startCount, 2)
-
-        await session.stopRuntime()
-        snapshot = await session.snapshot
-        XCTAssertEqual(snapshot.subscriptions.runtimeState, .stopped)
-        XCTAssertTrue(snapshot.subscriptions.accounts.isEmpty)
-        runtimeMeasurements = await runtimeProbe.measurements
-        XCTAssertGreaterThanOrEqual(runtimeMeasurements.stopCount, 2)
-    }
-
-    func testManagedSubscriptionCommandsFollowRuntimeAndHelperOwnership() {
+    func testNativeSubscriptionCommandsFollowRuntimeOwnership() {
         var availability = ManagedSubscriptionInteractionPolicy.availability(
             runtimeState: .ownedExternally(owner: "modelmoor-tui"),
-            cliProxyState: .running(port: 18_317),
-            hasActiveLogin: false
+            hasActiveLogin: false,
+            hasAccounts: true
         )
         XCTAssertEqual(
             availability,
@@ -599,85 +472,199 @@ final class ModelMoorApplicationTests: XCTestCase {
 
         availability = ManagedSubscriptionInteractionPolicy.availability(
             runtimeState: .running,
-            cliProxyState: .stopped,
-            hasActiveLogin: false
+            hasActiveLogin: false,
+            hasAccounts: false
         )
         XCTAssertTrue(availability.canStartLogin)
-        XCTAssertFalse(availability.canRefreshAccounts)
+        XCTAssertTrue(availability.canRefreshAccounts)
         XCTAssertFalse(availability.canMutateAccounts)
 
         availability = ManagedSubscriptionInteractionPolicy.availability(
             runtimeState: .running,
-            cliProxyState: .running(port: 18_317),
-            hasActiveLogin: true
+            hasActiveLogin: true,
+            hasAccounts: true
         )
         XCTAssertFalse(availability.canStartLogin)
         XCTAssertTrue(availability.canRefreshAccounts)
         XCTAssertTrue(availability.canMutateAccounts)
     }
 
-    func testManagedSubscriptionRetryIsCancelledWhileRuntimeIsSuspended() async throws {
-        let runtimeProbe = FakeCLIProxyRuntimeProbe()
-        let (session, directory) = try makeSession(
-            inspector: ImmediateInspector(),
-            cliProxyServiceFactory: { _, handler in
-                FailingCLIProxyService(probe: runtimeProbe, stateHandler: handler)
-            }
-        )
+    func testNativeSubscriptionAccountsLoadFromModelMoorSecretStore() async throws {
+        let (session, directory) = try makeSession()
         defer { try? FileManager.default.removeItem(at: directory) }
-
-        try await session.load()
-        var configuration = await session.snapshot.configuration
-        configuration.gateway.enabled = false
-        configuration.cliProxy.enabled = true
-        configuration.reconcileManagedCLIProxyEndpoint()
-        try await session.saveConfiguration(configuration)
-        try await session.startRuntime(owner: "subscription-retry-test")
-
-        var measurements = await runtimeProbe.measurements
-        XCTAssertEqual(measurements.startCount, 1)
-        try await Task.sleep(for: .milliseconds(50))
-        await session.suspendRuntime(reason: "test sleep")
-        try await Task.sleep(for: .milliseconds(1_200))
-        measurements = await runtimeProbe.measurements
-        XCTAssertEqual(
-            measurements.startCount,
-            1,
-            "A cancelled one-second retry must not restart the helper during sleep"
+        let credential = SubscriptionOAuthCredential(accessToken: "access", refreshToken: "refresh")
+        let account = try await session.subscriptionCredentialVault.save(
+            provider: .codex,
+            user: "codex@example.test",
+            plan: "plus",
+            credential: credential
         )
-        let suspendedSnapshot = await session.snapshot
-        XCTAssertEqual(suspendedSnapshot.subscriptions.runtimeState, .stopped)
+
+        try await session.startRuntime(owner: "native-subscription-test")
+        defer { Task { await session.stopRuntime() } }
+        try await session.refreshSubscriptionAccounts()
+        let snapshot = await session.snapshot
+        XCTAssertEqual(snapshot.subscriptions.accounts.map(\.id), [account.id.uuidString])
+        XCTAssertEqual(snapshot.subscriptions.accounts.first?.provider, "codex")
+        XCTAssertEqual(
+            snapshot.configuration.endpoints.first?.source,
+            .modelMoorSubscription
+        )
         await session.stopRuntime()
     }
 
-    func testSubscriptionLoginPreservesHelperStartupFailure() async throws {
-        let runtimeProbe = FakeCLIProxyRuntimeProbe()
-        let (session, directory) = try makeSession(
-            inspector: ImmediateInspector(),
-            cliProxyServiceFactory: { _, handler in
-                FailingCLIProxyService(probe: runtimeProbe, stateHandler: handler)
+    func testGrokDeviceLoginFlowsThroughTheNativeSessionWithoutCLIProxyAPI() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory.appendingPathComponent("grok")
+        let script = """
+        #!/bin/sh
+        [ "$1" = "login" ] && [ "$2" = "--device-auth" ] || exit 9
+        [ "$HOME/.grok" = "$GROK_HOME" ] || exit 8
+        printf 'Open this URL: https://x.ai/device?user_code=MM-456\\n'
+        sleep 1
+        printf '%s' '{"https://auth.x.ai::test":{"key":"grok-session-token","email":"native-grok@example.test"}}' > "$GROK_HOME/auth.json"
+        """
+        try Data(script.utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let (session, sessionDirectory) = try makeSession(grokExecutableURL: executable)
+        defer { try? FileManager.default.removeItem(at: sessionDirectory) }
+
+        try await session.startRuntime(owner: "native-grok-login-test")
+        let login = try await session.startSubscriptionLogin(.xai)
+        XCTAssertEqual(login.url.host, "x.ai")
+        var connected = false
+        for _ in 0..<80 {
+            let snapshot = await session.snapshot
+            if snapshot.subscriptions.accounts.contains(where: { $0.provider == "xai" }) {
+                connected = true
+                break
             }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(connected, "Grok login should be imported into ModelMoor's account pool")
+        await session.stopRuntime()
+    }
+
+    func testKimiDeviceLoginFlowsThroughNativeSessionWithoutCLIProxyAPI() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory.appendingPathComponent("kimi")
+        let script = """
+        #!/bin/sh
+        [ "$1" = "login" ] && [ "$2" = "--region" ] && [ "$3" = "global" ] || exit 9
+        mkdir -p "$KIMI_CODE_HOME/credentials"
+        printf 'Open this URL: https://www.kimi.com/code/login?user_code=MM-789\\n'
+        sleep 1
+        printf '%s' '{"email":"native-kimi@example.test","access_token":"kimi-session-token"}' > "$KIMI_CODE_HOME/credentials/kimi-code.json"
+        """
+        try Data(script.utf8).write(to: executable)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: executable.path)
+        let (session, sessionDirectory) = try makeSession(kimiExecutableURL: executable)
+        defer { try? FileManager.default.removeItem(at: sessionDirectory) }
+
+        try await session.startRuntime(owner: "native-kimi-login-test")
+        let login = try await session.startSubscriptionLogin(.kimi)
+        XCTAssertEqual(login.url.host, "www.kimi.com")
+        var connected = false
+        for _ in 0..<80 {
+            if (await session.snapshot).subscriptions.accounts.contains(where: { $0.provider == "kimi" }) {
+                connected = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertTrue(connected, "Kimi login should be imported into ModelMoor's account pool")
+        await session.stopRuntime()
+    }
+
+    func testNativeClaudeModelsAreDiscoveredWithoutStartingCLIProxyAPI() async throws {
+        let (session, directory) = try makeSession()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        _ = try await session.subscriptionCredentialVault.save(
+            provider: .claude,
+            user: "claude@example.test",
+            plan: "pro",
+            credential: SubscriptionOAuthCredential(accessToken: "access", refreshToken: "refresh")
         )
+
+        try await session.startRuntime(owner: "native-claude-subscription-test")
+        try await session.refreshSubscriptionState()
+        let snapshot = await session.snapshot
+        let models = snapshot.inspections[APIEndpointConfiguration.nativeSubscriptionEndpointID]?.models ?? []
+        XCTAssertEqual(Set(models.map(\.id)), Set(["claude/sonnet", "claude/opus", "claude/haiku"]))
+        await session.stopRuntime()
+    }
+
+    func testNativeGrokModelsAreDiscoveredWithoutStartingCLIProxyAPI() async throws {
+        let (session, directory) = try makeSession()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let credential = GrokBuildSubscriptionCredential(
+            email: "grok@example.test",
+            authFile: Data(#"{"https://auth.x.ai::test":{"key":"token","email":"grok@example.test"}}"#.utf8)
+        )
+        _ = try await session.subscriptionCredentialVault.save(
+            provider: .xai,
+            user: credential.email,
+            credential: credential.storedOAuthCredential
+        )
+
+        try await session.startRuntime(owner: "native-grok-subscription-test")
+        try await session.refreshSubscriptionState()
+        let snapshot = await session.snapshot
+        let models = snapshot.inspections[APIEndpointConfiguration.nativeSubscriptionEndpointID]?.models ?? []
+        XCTAssertEqual(Set(models.map(\.id)), Set(["grok/grok-4.7"]))
+        XCTAssertEqual(snapshot.subscriptions.accounts.first?.provider, "xai")
+        await session.stopRuntime()
+    }
+
+    func testNativeKimiModelsAreDiscoveredWithoutStartingCLIProxyAPI() async throws {
+        let (session, directory) = try makeSession()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let profile = KimiCodeSubscriptionProfile(credentialFiles: [
+            "kimi-code.json": Data(#"{"access_token":"test-token"}"#.utf8)
+        ])
+        _ = try await session.subscriptionCredentialVault.save(
+            provider: .kimi,
+            user: "Kimi Code account",
+            credential: profile.storedOAuthCredential
+        )
+
+        try await session.startRuntime(owner: "native-kimi-subscription-test")
+        try await session.refreshSubscriptionState()
+        let snapshot = await session.snapshot
+        let models = snapshot.inspections[APIEndpointConfiguration.nativeSubscriptionEndpointID]?.models ?? []
+        XCTAssertEqual(Set(models.map(\.id)), Set(["kimi/k3"]))
+        XCTAssertEqual(snapshot.subscriptions.accounts.first?.provider, "kimi")
+        await session.stopRuntime()
+    }
+
+    func testLegacySubscriptionProxyCannotBeReenabledOrStarted() async throws {
+        let (session, directory) = try makeSession(inspector: ImmediateInspector())
         defer { try? FileManager.default.removeItem(at: directory) }
 
         try await session.load()
         var configuration = await session.snapshot.configuration
-        configuration.gateway.enabled = false
-        configuration.cliProxy.enabled = true
-        configuration.reconcileManagedCLIProxyEndpoint()
-        try await session.saveConfiguration(configuration)
-        try await session.startRuntime(owner: "subscription-login-failure-test")
+        configuration.endpoints.append(.managedCLIProxy(
+            id: APIEndpointConfiguration.nativeSubscriptionEndpointID,
+            port: 18_317
+        ))
+        XCTAssertThrowsError(try configuration.validated())
+    }
 
-        do {
-            _ = try await session.startSubscriptionLogin(.codex)
-            XCTFail("Expected the injected CLIProxyAPI start failure")
-        } catch {
-            XCTAssertEqual(
-                error as? ManagedSubscriptionError,
-                .loginFailed("Could not launch CLIProxyAPI: injected failure")
-            )
-        }
-        await session.stopRuntime()
+    func testLegacySubscriptionProxyConfigurationFailsBeforeLogin() async throws {
+        let (session, directory) = try makeSession(inspector: ImmediateInspector())
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try await session.load()
+        var configuration = await session.snapshot.configuration
+        configuration.endpoints.append(.managedCLIProxy(
+            id: APIEndpointConfiguration.nativeSubscriptionEndpointID,
+            port: 18_317
+        ))
+        XCTAssertThrowsError(try configuration.validated())
     }
 }
 
@@ -778,182 +765,6 @@ private final class DelayedSSHConfigScanner: SSHConfigScanning, @unchecked Senda
         lock.lock()
         defer { lock.unlock() }
         return storedCallCount
-    }
-}
-
-private actor FakeCLIProxyRuntimeProbe {
-    private(set) var startCount = 0
-    private(set) var stopCount = 0
-
-    func recordStart() { startCount += 1 }
-    func recordStop() { stopCount += 1 }
-
-    var measurements: (startCount: Int, stopCount: Int) {
-        (startCount, stopCount)
-    }
-}
-
-private actor FakeCLIProxyService: CLIProxyServicing {
-    private(set) var state: CLIProxyRuntimeState = .stopped
-    private let probe: FakeCLIProxyRuntimeProbe
-    private let stateHandler: @Sendable (CLIProxyRuntimeState) -> Void
-
-    init(
-        probe: FakeCLIProxyRuntimeProbe,
-        stateHandler: @escaping @Sendable (CLIProxyRuntimeState) -> Void
-    ) {
-        self.probe = probe
-        self.stateHandler = stateHandler
-    }
-
-    func start(
-        configuration: CLIProxyConfiguration,
-        apiKey: String,
-        managementPassword: String
-    ) async throws {
-        if case .running(port: configuration.listenPort) = state { return }
-        await probe.recordStart()
-        state = .starting
-        stateHandler(state)
-        state = .running(port: configuration.listenPort)
-        stateHandler(state)
-    }
-
-    func stop() async {
-        await probe.recordStop()
-        state = .stopped
-        stateHandler(state)
-    }
-}
-
-private actor FailingCLIProxyService: CLIProxyServicing {
-    private(set) var state: CLIProxyRuntimeState = .stopped
-    private let probe: FakeCLIProxyRuntimeProbe
-    private let stateHandler: @Sendable (CLIProxyRuntimeState) -> Void
-
-    init(
-        probe: FakeCLIProxyRuntimeProbe,
-        stateHandler: @escaping @Sendable (CLIProxyRuntimeState) -> Void
-    ) {
-        self.probe = probe
-        self.stateHandler = stateHandler
-    }
-
-    func start(
-        configuration: CLIProxyConfiguration,
-        apiKey: String,
-        managementPassword: String
-    ) async throws {
-        await probe.recordStart()
-        state = .failed("injected failure")
-        stateHandler(state)
-        throw CLIProxyServiceError.launch("injected failure")
-    }
-
-    func stop() async {
-        await probe.recordStop()
-        state = .stopped
-        stateHandler(state)
-    }
-}
-
-private actor FakeCLIProxyManagementState {
-    private var storedAccounts: [CLIProxyAccount] = []
-    private(set) var cancelledStates: [String] = []
-
-    func setAccounts(_ accounts: [CLIProxyAccount]) {
-        storedAccounts = accounts
-    }
-
-    var accounts: [CLIProxyAccount] { storedAccounts }
-
-    func cancel(state: String) {
-        cancelledStates.append(state)
-    }
-
-    func delete(name: String) {
-        storedAccounts.removeAll { $0.name == name }
-    }
-
-    func setDisabled(id: String, disabled: Bool) {
-        guard let index = storedAccounts.firstIndex(where: { $0.id == id }) else { return }
-        storedAccounts[index].disabled = disabled
-    }
-}
-
-private struct FakeCLIProxyManagementClient: CLIProxyManaging {
-    let state: FakeCLIProxyManagementState
-
-    func startLogin(_ provider: CLIProxyLoginProvider) async throws -> CLIProxyLoginSession {
-        CLIProxyLoginSession(
-            status: "ok",
-            url: URL(string: "https://example.com/device")!,
-            state: "login-state",
-            flow: "device",
-            userCode: "ABCD-EFGH"
-        )
-    }
-
-    func loginStatus(state: String) async throws -> CLIProxyAuthStatus {
-        CLIProxyAuthStatus(status: "pending")
-    }
-
-    func cancelLogin(state: String) async throws {
-        await self.state.cancel(state: state)
-    }
-
-    func accounts() async throws -> [CLIProxyAccount] {
-        await state.accounts
-    }
-
-    func deleteAccount(named name: String) async throws {
-        await state.delete(name: name)
-    }
-
-    func setAccountDisabled(_ account: CLIProxyAccount, disabled: Bool) async throws {
-        await state.setDisabled(id: account.id, disabled: disabled)
-    }
-}
-
-private struct FakeSubscriptionUsageProvider: SubscriptionUsageProviding {
-    let isAvailable = true
-
-    func usage(for accounts: [CLIProxyAccount]) async -> [SubscriptionUsageSnapshot] {
-        accounts.map {
-            SubscriptionUsageSnapshot(id: $0.id, accountEmail: $0.email, source: "test")
-        }
-    }
-}
-
-private actor ManagedSubscriptionDeliveryProbe {
-    private var snapshotDeliveryStarted = false
-    private var snapshotDeliveryStartWaiter: CheckedContinuation<Void, Never>?
-    private var snapshotDeliveryReleaseWaiter: CheckedContinuation<Void, Never>?
-    private(set) var commandCompleted = false
-
-    func receiveSnapshot() async {
-        snapshotDeliveryStarted = true
-        snapshotDeliveryStartWaiter?.resume()
-        snapshotDeliveryStartWaiter = nil
-        await withCheckedContinuation { continuation in
-            snapshotDeliveryReleaseWaiter = continuation
-        }
-    }
-
-    func waitUntilSnapshotDeliveryStarts() async {
-        guard !snapshotDeliveryStarted else { return }
-        await withCheckedContinuation { continuation in
-            snapshotDeliveryStartWaiter = continuation
-        }
-    }
-
-    func releaseSnapshotDelivery() {
-        snapshotDeliveryReleaseWaiter?.resume()
-        snapshotDeliveryReleaseWaiter = nil
-    }
-
-    func markCommandCompleted() {
-        commandCompleted = true
     }
 }
 

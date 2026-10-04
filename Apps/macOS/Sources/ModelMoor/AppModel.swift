@@ -29,15 +29,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var isInspectingAllEndpoints = false
     @Published var gatewayState: GatewayServiceState = .stopped
     @Published private(set) var sessionRuntimeState: SessionRuntimeState = .stopped
-    @Published private(set) var cliProxyState: CLIProxyRuntimeState = .stopped
-    @Published private(set) var subscriptionAccounts: [CLIProxyAccount] = []
-    @Published private(set) var activeSubscriptionLogin: CLIProxyLoginSession?
-    @Published private(set) var activeSubscriptionProvider: CLIProxyLoginProvider?
+    @Published private(set) var subscriptionAccounts: [SubscriptionAccount] = []
+    @Published private(set) var activeSubscriptionLogin: SubscriptionLoginSession?
+    @Published private(set) var activeSubscriptionProvider: SubscriptionProvider?
     @Published private(set) var isRefreshingSubscriptionAccounts = false
     @Published private(set) var updatingSubscriptionAccountIDs: Set<String> = []
-    @Published private(set) var subscriptionUsage: [String: SubscriptionUsageSnapshot] = [:]
-    @Published private(set) var isRefreshingSubscriptionUsage = false
-    @Published private(set) var isCodexBarAvailable = false
     @Published private(set) var tokenUsage = TokenUsageSnapshot.zero
     @Published var selectedTunnelID: UUID?
     @Published var selectedEndpointID: UUID?
@@ -161,9 +157,6 @@ final class AppModel: ObservableObject {
             availableEndpointAPIKeyIDs = snapshot.availableEndpointAPIKeyIDs
         }
         let subscriptions = snapshot.subscriptions
-        if cliProxyState != subscriptions.runtimeState {
-            cliProxyState = subscriptions.runtimeState
-        }
         if subscriptionAccounts != subscriptions.accounts {
             subscriptionAccounts = subscriptions.accounts
         }
@@ -178,15 +171,6 @@ final class AppModel: ObservableObject {
         }
         if updatingSubscriptionAccountIDs != subscriptions.updatingAccountIDs {
             updatingSubscriptionAccountIDs = subscriptions.updatingAccountIDs
-        }
-        if subscriptionUsage != subscriptions.usage {
-            subscriptionUsage = subscriptions.usage
-        }
-        if isRefreshingSubscriptionUsage != subscriptions.isRefreshingUsage {
-            isRefreshingSubscriptionUsage = subscriptions.isRefreshingUsage
-        }
-        if isCodexBarAvailable != subscriptions.isUsageProviderAvailable {
-            isCodexBarAvailable = subscriptions.isUsageProviderAvailable
         }
         if lastSubscriptionErrorMessage != subscriptions.errorMessage {
             lastSubscriptionErrorMessage = subscriptions.errorMessage
@@ -221,8 +205,8 @@ final class AppModel: ObservableObject {
     var subscriptionActionAvailability: ManagedSubscriptionActionAvailability {
         ManagedSubscriptionInteractionPolicy.availability(
             runtimeState: sessionRuntimeState,
-            cliProxyState: cliProxyState,
-            hasActiveLogin: activeSubscriptionLogin != nil
+            hasActiveLogin: activeSubscriptionLogin != nil,
+            hasAccounts: !subscriptionAccounts.isEmpty
         )
     }
 
@@ -280,7 +264,6 @@ final class AppModel: ObservableObject {
 
     func saveAndRestart() async {
         do {
-            configuration.reconcileManagedCLIProxyEndpoint()
             try await session.saveConfiguration(configuration)
             await syncFromSession()
             errorMessage = nil
@@ -833,7 +816,7 @@ final class AppModel: ObservableObject {
         copy("http://127.0.0.1:\(configuration.gateway.listenPort)/v1")
     }
 
-    func connectSubscriptionAccount(_ provider: CLIProxyLoginProvider) async {
+    func connectSubscriptionAccount(_ provider: SubscriptionProvider) async {
         do {
             let login = try await session.startSubscriptionLogin(provider)
             await syncFromSession()
@@ -873,12 +856,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func refreshSubscriptionUsage() async {
-        await session.refreshSubscriptionUsage()
-        await syncFromSession()
-    }
-
-    func removeSubscriptionAccount(_ account: CLIProxyAccount) async {
+    func removeSubscriptionAccount(_ account: SubscriptionAccount) async {
         do {
             try await session.removeSubscriptionAccount(account)
             await syncFromSession()
@@ -889,7 +867,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func setSubscriptionAccountEnabled(_ account: CLIProxyAccount, enabled: Bool) async {
+    func setSubscriptionAccountEnabled(_ account: SubscriptionAccount, enabled: Bool) async {
         do {
             try await session.setSubscriptionAccountEnabled(account, enabled: enabled)
             await syncFromSession()

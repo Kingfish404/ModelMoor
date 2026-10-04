@@ -1,6 +1,67 @@
 import Foundation
 
 public enum ConfigurationMigration {
+    private static func retireLegacySubscriptionProxy(in dictionary: inout [String: Any]) {
+        dictionary.removeValue(forKey: "cliProxy")
+        guard var endpoints = dictionary["endpoints"] as? [[String: Any]] else { return }
+        for index in endpoints.indices {
+            var endpoint = endpoints[index]
+            guard let source = endpoint["source"] as? [String: Any],
+                  source["type"] as? String == "managedCLIProxy" else { continue }
+            endpoint["source"] = ["type": "modelMoorSubscription"]
+            endpoint["authentication"] = ["type": "none"]
+            endpoint["apiKeys"] = []
+            endpoint["activeAPIKeyID"] = NSNull()
+            endpoint["pollIntervalSeconds"] = 0
+            endpoints[index] = endpoint
+        }
+        dictionary["endpoints"] = endpoints
+    }
+
+    public static func migrateV4(_ data: Data) throws -> ModelMoorConfiguration {
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw ConfigurationError.unreadable("Could not decode schema 4 configuration: \(error.localizedDescription)")
+        }
+        guard var dictionary = object as? [String: Any], dictionary["schemaVersion"] as? Int == 4 else {
+            throw ConfigurationError.unsupportedSchema((object as? [String: Any])?["schemaVersion"] as? Int ?? -1)
+        }
+        dictionary["schemaVersion"] = ModelMoorConfiguration.currentSchemaVersion
+        retireLegacySubscriptionProxy(in: &dictionary)
+        do {
+            let migratedData = try JSONSerialization.data(withJSONObject: dictionary)
+            return try JSONDecoder().decode(ModelMoorConfiguration.self, from: migratedData).validated()
+        } catch let error as ConfigurationError {
+            throw error
+        } catch {
+            throw ConfigurationError.unreadable("Could not migrate schema 4 configuration: \(error.localizedDescription)")
+        }
+    }
+
+    public static func migrateV3(_ data: Data) throws -> ModelMoorConfiguration {
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw ConfigurationError.unreadable("Could not decode schema 3 configuration: \(error.localizedDescription)")
+        }
+        guard var dictionary = object as? [String: Any], dictionary["schemaVersion"] as? Int == 3 else {
+            throw ConfigurationError.unsupportedSchema((object as? [String: Any])?["schemaVersion"] as? Int ?? -1)
+        }
+        dictionary["schemaVersion"] = ModelMoorConfiguration.currentSchemaVersion
+        retireLegacySubscriptionProxy(in: &dictionary)
+        do {
+            let migratedData = try JSONSerialization.data(withJSONObject: dictionary)
+            return try JSONDecoder().decode(ModelMoorConfiguration.self, from: migratedData).validated()
+        } catch let error as ConfigurationError {
+            throw error
+        } catch {
+            throw ConfigurationError.unreadable("Could not migrate schema 3 configuration: \(error.localizedDescription)")
+        }
+    }
+
     public static func migrateV2(_ data: Data) throws -> ModelMoorConfiguration {
         let object: Any
         do {
@@ -12,6 +73,7 @@ public enum ConfigurationMigration {
             throw ConfigurationError.unsupportedSchema((object as? [String: Any])?["schemaVersion"] as? Int ?? -1)
         }
         dictionary["schemaVersion"] = ModelMoorConfiguration.currentSchemaVersion
+        retireLegacySubscriptionProxy(in: &dictionary)
         do {
             let migratedData = try JSONSerialization.data(withJSONObject: dictionary)
             return try JSONDecoder().decode(ModelMoorConfiguration.self, from: migratedData).validated()

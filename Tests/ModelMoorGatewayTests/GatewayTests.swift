@@ -8,6 +8,7 @@ import Foundation
 import FoundationNetworking
 #endif
 import ModelMoorCore
+import ModelMoorSystem
 @testable import ModelMoorGateway
 import XCTest
 
@@ -464,39 +465,264 @@ final class GatewayTests: XCTestCase {
         XCTAssertEqual(json["model"] as? String, "deepseek-v4-flash")
     }
 
-    func testManagedSubscriptionRouteUsesOnlyTheLoopbackSidecar() throws {
-        var configuration = ModelMoorConfiguration(
+    func testManagedSubscriptionRouteCannotBeConfiguredThroughLegacySidecar() throws {
+        let endpoint = APIEndpointConfiguration.managedCLIProxy(
+            id: UUID(),
+            port: 18_317
+        )
+        let configuration = ModelMoorConfiguration(
+            endpoints: [endpoint],
             routes: [ModelRouteConfiguration(
                 publicModel: "chatgpt-codex",
-                endpointID: CLIProxyConfiguration.defaultEndpointID,
+                endpointID: endpoint.id,
                 upstreamModel: "gpt-5.4"
             )],
-            gateway: GatewayConfiguration(enabled: true),
-            cliProxy: CLIProxyConfiguration(enabled: true, listenPort: 18_317)
+            gateway: GatewayConfiguration(enabled: true)
         )
-        configuration.reconcileManagedCLIProxyEndpoint()
+        let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
+            configuration: configuration,
+            gatewayToken: "local-token"
+        ))
+        let decision = router.route(GatewayRequest(
+            method: "POST",
+            uri: "/v1/responses",
+            headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"],
+            body: Data(#"{"model":"chatgpt-codex","input":"hello"}"#.utf8)
+        ))
+        guard case let .local(response) = decision else { return XCTFail("Expected a retired endpoint response") }
+        XCTAssertEqual(response.status, 503)
+        XCTAssertTrue(String(decoding: response.body, as: UTF8.self).contains("legacy_subscription_endpoint"))
+    }
+
+    func testCodexSubscriptionRouteUsesModelMoorOAuthCredentialDirectly() throws {
+        let endpointID = APIEndpointConfiguration.nativeSubscriptionEndpointID
+        let configuration = ModelMoorConfiguration(
+            endpoints: [.modelMoorSubscription(id: endpointID)],
+            routes: [ModelRouteConfiguration(
+                publicModel: "chatgpt-codex",
+                endpointID: endpointID,
+                upstreamModel: "gpt-5.4"
+            )],
+            gateway: GatewayConfiguration(enabled: true)
+        )
+        let payload = Data(#"{"https://api.openai.com/auth":{"chatgpt_account_id":"account-42"}}"#.utf8)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let credential = SubscriptionOAuthCredential(
+            accessToken: "subscription-access-token",
+            refreshToken: "subscription-refresh-token",
+            idToken: "header.\(payload).signature"
+        )
         let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
             configuration: try configuration.validated(),
             gatewayToken: "local-token",
-            endpointSecrets: [configuration.cliProxy.endpointID: "sidecar-key"]
+            subscriptionCredentials: [.codex: credential],
+            subscriptionAccountIDs: [.codex: UUID()]
         ))
 
         let decision = router.route(GatewayRequest(
             method: "POST",
-            uri: "/v1/responses",
-            headers: [
-                "Authorization": "Bearer local-token",
-                "Content-Type": "application/json"
-            ],
-            body: Data(#"{"model":"chatgpt-codex","input":"hello"}"#.utf8)
+            uri: "/v1/responses?beta=true",
+            headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"],
+            body: Data(#"{"model":"chatgpt-codex","stream":true,"input":"hello"}"#.utf8)
         ))
-
-        guard case let .upstream(prepared) = decision else { return XCTFail("Expected sidecar request") }
-        XCTAssertEqual(prepared.urlRequest.url?.absoluteString, "http://127.0.0.1:18317/v1/responses")
-        XCTAssertEqual(prepared.urlRequest.value(forHTTPHeaderField: "Authorization"), "Bearer sidecar-key")
+        guard case let .upstream(prepared) = decision else { return XCTFail("Expected direct subscription request") }
+        XCTAssertEqual(prepared.urlRequest.url?.host, "chatgpt.com")
+        XCTAssertEqual(prepared.urlRequest.url?.path, "/backend-api/codex/responses")
+        XCTAssertEqual(prepared.urlRequest.url?.query, "beta=true")
+        XCTAssertEqual(prepared.urlRequest.value(forHTTPHeaderField: "Authorization"), "Bearer subscription-access-token")
+        XCTAssertEqual(prepared.urlRequest.value(forHTTPHeaderField: "chatgpt-account-id"), "account-42")
         let body = try XCTUnwrap(prepared.urlRequest.httpBody)
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["model"] as? String, "gpt-5.4")
+    }
+
+    func testClaudeSubscriptionRouteUsesNativeClaudeCodeProcess() throws {
+        let endpointID = UUID()
+        let accountID = UUID()
+        let configuration = ModelMoorConfiguration(
+            endpoints: [.modelMoorSubscription(id: endpointID)],
+            routes: [ModelRouteConfiguration(
+                publicModel: "claude-native",
+                endpointID: endpointID,
+                upstreamModel: "claude/sonnet"
+            )],
+            gateway: GatewayConfiguration(enabled: true)
+        )
+        let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
+            configuration: try configuration.validated(),
+            gatewayToken: "local-token",
+            subscriptionCredentials: [.claude: SubscriptionOAuthCredential(
+                accessToken: "claude-oauth-token",
+                refreshToken: "claude-refresh-token"
+            )],
+            subscriptionAccountIDs: [.claude: accountID]
+        ))
+        let requestBody = Data(#"{"model":"claude-native","messages":[{"role":"user","content":"hello"}]}"#.utf8)
+        let decision = router.route(.init(
+            method: "POST",
+            uri: "/v1/chat/completions",
+            headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"],
+            body: requestBody
+        ))
+        guard case let .upstream(prepared) = decision else { return XCTFail("Expected native Claude process route") }
+        let context = try XCTUnwrap(prepared.claudeCodeSubscription)
+        XCTAssertEqual(context.accountID, accountID)
+        XCTAssertEqual(context.credential.accessToken, "claude-oauth-token")
+        XCTAssertEqual(context.upstreamModel, "claude/sonnet")
+        XCTAssertEqual(context.apiRequest.pathAndQuery, "/v1/chat/completions")
+        XCTAssertEqual(prepared.urlRequest.url?.host, "claude-code.local")
+    }
+
+    func testGrokSubscriptionRouteUsesTheModelMoorManagedGrokHome() throws {
+        let endpointID = UUID()
+        let accountID = UUID()
+        let configuration = ModelMoorConfiguration(
+            endpoints: [.modelMoorSubscription(id: endpointID)],
+            routes: [ModelRouteConfiguration(
+                publicModel: "grok-native",
+                endpointID: endpointID,
+                upstreamModel: "grok/grok-4.7"
+            )],
+            gateway: GatewayConfiguration(enabled: true)
+        )
+        let authFile = Data(#"{"https://auth.x.ai::acct":{"key":"grok-token","email":"person@example.com"}}"#.utf8)
+        let credential = GrokBuildSubscriptionCredential(email: "person@example.com", authFile: authFile)
+        let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
+            configuration: try configuration.validated(),
+            gatewayToken: "local-token",
+            subscriptionCredentials: [.xai: credential.storedOAuthCredential],
+            subscriptionAccountIDs: [.xai: accountID]
+        ))
+        let request = GatewayRequest(
+            method: "POST",
+            uri: "/v1/chat/completions",
+            headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"],
+            body: Data(#"{"model":"grok-native","messages":[{"role":"user","content":"hello"}]}"#.utf8)
+        )
+
+        guard case let .upstream(prepared) = router.route(request) else {
+            return XCTFail("Expected native Grok Build process route")
+        }
+        let context = try XCTUnwrap(prepared.grokBuildSubscription)
+        XCTAssertEqual(context.accountID, accountID)
+        XCTAssertEqual(context.credential.email, "person@example.com")
+        XCTAssertEqual(context.credential.authFile, authFile)
+        XCTAssertEqual(context.upstreamModel, "grok/grok-4.7")
+        XCTAssertEqual(context.apiRequest.pathAndQuery, "/v1/chat/completions")
+        XCTAssertEqual(prepared.urlRequest.url?.host, "grok-build.local")
+    }
+
+    func testKimiSubscriptionRouteUsesModelMoorManagedACPProfile() throws {
+        let endpointID = UUID()
+        let accountID = UUID()
+        let configuration = ModelMoorConfiguration(
+            endpoints: [.modelMoorSubscription(id: endpointID)],
+            routes: [ModelRouteConfiguration(publicModel: "kimi-native", endpointID: endpointID, upstreamModel: "kimi/k3")],
+            gateway: GatewayConfiguration(enabled: true)
+        )
+        let profile = KimiCodeSubscriptionProfile(credentialFiles: ["kimi-code.json": Data(#"{"access_token":"managed-kimi-token"}"#.utf8)])
+        let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
+            configuration: try configuration.validated(),
+            gatewayToken: "local-token",
+            subscriptionCredentials: [.kimi: profile.storedOAuthCredential],
+            subscriptionAccountIDs: [.kimi: accountID]
+        ))
+        let request = GatewayRequest(
+            method: "POST",
+            uri: "/v1/chat/completions",
+            headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"],
+            body: Data(#"{"model":"kimi-native","messages":[{"role":"user","content":"hello"}]}"#.utf8)
+        )
+        guard case let .upstream(prepared) = router.route(request) else {
+            return XCTFail("Expected native Kimi Code ACP route")
+        }
+        let context = try XCTUnwrap(prepared.kimiCodeSubscription)
+        XCTAssertEqual(context.accountID, accountID)
+        XCTAssertEqual(context.profile, profile)
+        XCTAssertEqual(context.upstreamModel, "kimi/k3")
+        XCTAssertEqual(context.apiRequest.pathAndQuery, "/v1/chat/completions")
+        XCTAssertEqual(prepared.urlRequest.url?.host, "kimi-code.local")
+    }
+
+    func testClaudeSubscriptionStreamUsesOpenAIChunkEnvelope() throws {
+        let response = Data(#"{"id":"chatcmpl-test","object":"chat.completion","created":123,"model":"sonnet","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}"#.utf8)
+        let encoded = ClaudeCodeChatCompletionStreamEncoder.encode(from: response, includeUsage: true)
+        let events = String(decoding: encoded, as: UTF8.self).components(separatedBy: "\n\n")
+            .compactMap { event -> String? in
+                guard event.hasPrefix("data: ") else { return nil }
+                return String(event.dropFirst("data: ".count))
+            }
+        XCTAssertEqual(events.last, "[DONE]")
+        let chunks = try events.dropLast().map { line in
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        }
+        XCTAssertEqual(chunks.first?["object"] as? String, "chat.completion.chunk")
+        let firstChoice = try XCTUnwrap((chunks.first?["choices"] as? [[String: Any]])?.first)
+        XCTAssertEqual((firstChoice["delta"] as? [String: Any])?["role"] as? String, "assistant")
+        let contentChoice = try XCTUnwrap(chunks.dropFirst().first?["choices"] as? [[String: Any]])
+        XCTAssertEqual((contentChoice.first?["delta"] as? [String: Any])?["content"] as? String, "hello")
+        XCTAssertNotNil(chunks.first(where: { $0["usage"] != nil }))
+    }
+
+    func testNativeSubscriptionRouteExplainsMissingCodexCredential() throws {
+        let endpointID = UUID()
+        let configuration = ModelMoorConfiguration(
+            endpoints: [.modelMoorSubscription(id: endpointID)],
+            routes: [ModelRouteConfiguration(
+                publicModel: "codex",
+                endpointID: endpointID,
+                upstreamModel: "gpt-5.4"
+            )],
+            gateway: GatewayConfiguration(enabled: true)
+        )
+        let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
+            configuration: try configuration.validated(),
+            gatewayToken: "local-token"
+        ))
+        let body = Data(#"{"model":"codex","stream":true}"#.utf8)
+        let decision = router.route(.init(
+            method: "POST",
+            uri: "/v1/responses",
+            headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"],
+            body: body
+        ))
+        guard case let .local(response) = decision else { return XCTFail("Expected a local credential error") }
+        XCTAssertEqual(response.status, 424)
+        XCTAssertTrue(String(decoding: response.body, as: UTF8.self).contains("Sign in to a Codex subscription"))
+    }
+
+    func testCodexSubscriptionRouteSupportsNonStreamingResponses() throws {
+        let endpointID = UUID()
+        let configuration = ModelMoorConfiguration(
+            endpoints: [.modelMoorSubscription(id: endpointID)],
+            routes: [ModelRouteConfiguration(publicModel: "codex", endpointID: endpointID, upstreamModel: "gpt-5.4")],
+            gateway: GatewayConfiguration(enabled: true)
+        )
+        let accountID = UUID()
+        let tokenPayload = Data(#"{"https://api.openai.com/auth":{"chatgpt_account_id":"acct"}}"#.utf8)
+            .base64EncodedString().replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        let router = GatewayRequestRouter(snapshot: GatewaySnapshot(
+            configuration: try configuration.validated(),
+            gatewayToken: "local-token",
+            subscriptionCredentials: [.codex: SubscriptionOAuthCredential(
+                accessToken: "access", refreshToken: "refresh", idToken: "x.\(tokenPayload).y"
+            )],
+            subscriptionAccountIDs: [.codex: accountID]
+        ))
+        let decision = router.route(.init(
+            method: "POST",
+            uri: "/v1/responses",
+            headers: ["Authorization": "Bearer local-token", "Content-Type": "application/json"],
+            body: Data(#"{"model":"codex","input":"hello","stream":false}"#.utf8)
+        ))
+        guard case let .upstream(prepared) = decision else { return XCTFail("Expected direct non-streaming request") }
+        XCTAssertEqual(prepared.urlRequest.value(forHTTPHeaderField: "Accept"), "application/json")
+        let forwarded = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(prepared.urlRequest.httpBody)) as? [String: Any])
+        XCTAssertEqual(forwarded["stream"] as? Bool, false)
     }
 
     func testAuthenticationAndUnknownModelNeverReachUpstream() {

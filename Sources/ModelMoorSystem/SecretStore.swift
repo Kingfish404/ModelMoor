@@ -8,7 +8,6 @@ public enum SecretStoreSupport {
     public static let productionService = "com.modelmoor.api-token"
     public static let legacyProductionService = "dev.modelmoor.api-token"
     public static let gatewayAccount = "gateway-client-token"
-    public static let cliProxyManagementAccount = "cliproxy-management-password"
     public static let gatewayAPIKeyPrefix = "sk-"
 
     public static func gatewayAccount(for keyID: UUID) -> String {
@@ -35,7 +34,7 @@ public enum SecretStoreSupport {
 }
 
 /// Cross-platform secret storage contract. Platform backends store endpoint
-/// API keys, Unified API keys and helper credentials; secrets never enter
+/// API keys and Unified API keys; secrets never enter
 /// configuration files, snapshots or logs.
 public protocol ModelMoorSecretStore: EndpointSecretStore {
     func prepareForUse() throws
@@ -63,17 +62,6 @@ public extension ModelMoorSecretStore {
         if let existing = try token(for: endpointID), !existing.isEmpty { return existing }
         let generated = SecretStoreSupport.makeSecureToken()
         try setToken(generated, for: endpointID)
-        return generated
-    }
-
-    func cliProxyManagementPassword() throws -> String? {
-        try token(account: SecretStoreSupport.cliProxyManagementAccount)
-    }
-
-    func ensureCLIProxyManagementPassword() throws -> String {
-        if let existing = try cliProxyManagementPassword(), !existing.isEmpty { return existing }
-        let generated = SecretStoreSupport.makeSecureToken()
-        try setToken(generated, account: SecretStoreSupport.cliProxyManagementAccount)
         return generated
     }
 

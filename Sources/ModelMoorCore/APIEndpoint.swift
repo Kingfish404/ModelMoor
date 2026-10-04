@@ -17,13 +17,14 @@ public enum APIEndpointSource: Codable, Equatable, Sendable {
     case sshMapping(mappingID: UUID, originScheme: EndpointScheme)
     case directHTTPS(originURL: URL)
     case managedCLIProxy(originURL: URL)
+    case modelMoorSubscription
 
     private enum CodingKeys: String, CodingKey {
         case type, mappingID, originScheme, originURL
     }
 
     private enum SourceType: String, Codable {
-        case sshMapping, directHTTPS, managedCLIProxy
+        case sshMapping, directHTTPS, managedCLIProxy, modelMoorSubscription
     }
 
     public init(from decoder: Decoder) throws {
@@ -38,6 +39,8 @@ public enum APIEndpointSource: Codable, Equatable, Sendable {
             self = .directHTTPS(originURL: try container.decode(URL.self, forKey: .originURL))
         case .managedCLIProxy:
             self = .managedCLIProxy(originURL: try container.decode(URL.self, forKey: .originURL))
+        case .modelMoorSubscription:
+            self = .modelMoorSubscription
         }
     }
 
@@ -54,6 +57,8 @@ public enum APIEndpointSource: Codable, Equatable, Sendable {
         case let .managedCLIProxy(originURL):
             try container.encode(SourceType.managedCLIProxy, forKey: .type)
             try container.encode(originURL, forKey: .originURL)
+        case .modelMoorSubscription:
+            try container.encode(SourceType.modelMoorSubscription, forKey: .type)
         }
     }
 }
@@ -100,6 +105,11 @@ public struct EndpointAPIKeyConfiguration: Codable, Equatable, Identifiable, Sen
 }
 
 public struct APIEndpointConfiguration: Codable, Equatable, Identifiable, Sendable {
+    /// Stable identifier retained from the retired managed subscription
+    /// endpoint so existing model routes keep their endpoint reference.
+    public static let nativeSubscriptionEndpointID = UUID(
+        uuidString: "8EC690A4-A9B2-4BC1-B0BB-A2DF5298806E"
+    )!
     public var id: UUID
     public var name: String
     public var source: APIEndpointSource
@@ -238,6 +248,25 @@ public struct APIEndpointConfiguration: Codable, Equatable, Identifiable, Sendab
         )
     }
 
+    public static func modelMoorSubscription(
+        id: UUID = nativeSubscriptionEndpointID,
+        name: String = "Subscription Accounts"
+    ) -> Self {
+        Self(
+            id: id,
+            name: name,
+            source: .modelMoorSubscription,
+            kind: .openAICompatible,
+            basePath: "/v1",
+            healthPath: "/v1/models",
+            modelListPath: "/v1/models",
+            pollIntervalSeconds: 0,
+            authentication: .none,
+            apiKeys: [],
+            activeAPIKeyID: nil
+        )
+    }
+
     public func validated(mappingIDs: Set<UUID>) throws -> Self {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ConfigurationError.invalidValue("Endpoint name cannot be empty.")
@@ -259,6 +288,10 @@ public struct APIEndpointConfiguration: Codable, Equatable, Identifiable, Sendab
             try EndpointURLResolver.validateDirectOrigin(originURL)
         case let .managedCLIProxy(originURL):
             try EndpointURLResolver.validateManagedOrigin(originURL)
+        case .modelMoorSubscription:
+            guard authentication == .none, apiKeys.isEmpty, activeAPIKeyID == nil else {
+                throw ConfigurationError.invalidValue("ModelMoor subscription endpoints cannot contain provider API keys.")
+            }
         }
         if case let .header(name) = authentication {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -476,6 +509,8 @@ public enum EndpointURLResolver {
         case let .managedCLIProxy(originURL):
             try validateManagedOrigin(originURL)
             origin = originURL
+        case .modelMoorSubscription:
+            throw ConfigurationError.invalidValue("ModelMoor subscription endpoints are resolved by native provider adapters.")
         }
 
         guard var components = URLComponents(url: origin, resolvingAgainstBaseURL: false) else {

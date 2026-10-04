@@ -342,9 +342,6 @@ public enum TUIRenderInvalidation {
         if previous.configuration.gateway != next.configuration.gateway {
             result.formUnion([.overview, .gateway, .settings])
         }
-        if previous.configuration.cliProxy != next.configuration.cliProxy {
-            result.formUnion([.subscriptions, .settings])
-        }
         if previous.runtimeState != next.runtimeState {
             result.formUnion([.summary, .attention])
         }

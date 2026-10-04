@@ -56,7 +56,7 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate, NSWindowDel
             let configuration = model.configuration
             let hasUsableDirectEndpoint = configuration.endpoints.contains { endpoint in
                 switch endpoint.source {
-                case .directHTTPS, .managedCLIProxy: break
+                case .directHTTPS, .managedCLIProxy, .modelMoorSubscription: break
                 case .sshMapping: return false
                 }
                 return endpoint.authentication == .none || model.hasToken(for: endpoint.id)

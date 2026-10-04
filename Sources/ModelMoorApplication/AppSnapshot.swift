@@ -14,42 +14,28 @@ public enum SessionRuntimeState: Equatable, Sendable {
     case ownedExternally(owner: String?)
 }
 
-/// Secret-free managed subscription state shared by every presentation.
-/// Login URLs and device codes are short-lived interaction data; credentials
-/// and management passwords never enter this snapshot.
+/// Secret-free native subscription state shared by every presentation.
 public struct ManagedSubscriptionSnapshot: Equatable, Sendable {
-    public var runtimeState: CLIProxyRuntimeState
-    public var accounts: [CLIProxyAccount]
-    public var activeLogin: CLIProxyLoginSession?
-    public var activeProvider: CLIProxyLoginProvider?
+    public var accounts: [SubscriptionAccount]
+    public var activeLogin: SubscriptionLoginSession?
+    public var activeProvider: SubscriptionProvider?
     public var isRefreshingAccounts: Bool
     public var updatingAccountIDs: Set<String>
-    public var usage: [String: SubscriptionUsageSnapshot]
-    public var isRefreshingUsage: Bool
-    public var isUsageProviderAvailable: Bool
     public var errorMessage: String?
 
     public init(
-        runtimeState: CLIProxyRuntimeState = .stopped,
-        accounts: [CLIProxyAccount] = [],
-        activeLogin: CLIProxyLoginSession? = nil,
-        activeProvider: CLIProxyLoginProvider? = nil,
+        accounts: [SubscriptionAccount] = [],
+        activeLogin: SubscriptionLoginSession? = nil,
+        activeProvider: SubscriptionProvider? = nil,
         isRefreshingAccounts: Bool = false,
         updatingAccountIDs: Set<String> = [],
-        usage: [String: SubscriptionUsageSnapshot] = [:],
-        isRefreshingUsage: Bool = false,
-        isUsageProviderAvailable: Bool = false,
         errorMessage: String? = nil
     ) {
-        self.runtimeState = runtimeState
         self.accounts = accounts
         self.activeLogin = activeLogin
         self.activeProvider = activeProvider
         self.isRefreshingAccounts = isRefreshingAccounts
         self.updatingAccountIDs = updatingAccountIDs
-        self.usage = usage
-        self.isRefreshingUsage = isRefreshingUsage
-        self.isUsageProviderAvailable = isUsageProviderAvailable
         self.errorMessage = errorMessage
     }
 }

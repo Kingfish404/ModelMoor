@@ -80,7 +80,10 @@ private struct SidebarSearchCorpus {
                 ))
             )
             if recognized {
-                if case .managedCLIProxy = endpoint.source { continue }
+                switch endpoint.source {
+                case .managedCLIProxy, .modelMoorSubscription: continue
+                case .sshMapping, .directHTTPS: break
+                }
                 preparedLLMEndpoints.append(entry)
             } else {
                 preparedOtherEndpoints.append(entry)
@@ -186,7 +189,7 @@ struct SidebarSearchIndex {
         let source: String
         switch endpoint.source {
         case let .directHTTPS(origin): source = origin.host ?? "Direct HTTP(S)"
-        case .managedCLIProxy: source = "Subscription accounts"
+        case .managedCLIProxy, .modelMoorSubscription: source = "Subscription accounts"
         case let .sshMapping(mappingID, _):
             source = connectionNamesByMappingID[mappingID].map { "via \($0)" }
                 ?? "Missing SSH connection"
@@ -274,8 +277,11 @@ enum SidebarSearchSelectionVisibility {
                 endpoint,
                 inspections: inspections
             )
-            if case .managedCLIProxy = endpoint.source, isRecognized {
-                return nil
+            if isRecognized {
+                switch endpoint.source {
+                case .managedCLIProxy, .modelMoorSubscription: return nil
+                case .sshMapping, .directHTTPS: break
+                }
             }
             return isRecognized ? .clearSearch : .clearSearchAndExpandOthers
         case .overview, .subscriptionAccounts, .gateway, .usage, .settings, nil:

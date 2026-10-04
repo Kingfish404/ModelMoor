@@ -346,7 +346,7 @@ struct ModelMoorSidebar: View {
     ) -> String {
         switch endpoint.source {
         case let .directHTTPS(origin): return origin.host ?? "Direct HTTP(S)"
-        case .managedCLIProxy: return "Subscription accounts"
+        case .managedCLIProxy, .modelMoorSubscription: return "Subscription accounts"
         case let .sshMapping(mappingID, _):
             if let connectionName = connectionNamesByMappingID[mappingID] {
                 return "via \(connectionName)"
@@ -380,7 +380,6 @@ struct ModelMoorSidebar: View {
     }
 
     private var subscriptionSubtitle: String {
-        if case .failed = model.cliProxyState { return AppLocalization.string("Needs attention") }
         if model.activeSubscriptionLogin != nil { return AppLocalization.string("Waiting for sign-in") }
         let total = model.subscriptionAccounts.count
         guard total > 0 else { return AppLocalization.string("No accounts connected") }
@@ -392,13 +391,11 @@ struct ModelMoorSidebar: View {
     }
 
     private var subscriptionSymbol: String {
-        if case .failed = model.cliProxyState { return "exclamationmark.triangle.fill" }
         if model.activeSubscriptionLogin != nil { return "person.crop.circle.badge.clock" }
         return model.subscriptionAccounts.isEmpty ? "person.2.badge.plus" : "person.2.fill"
     }
 
     private var subscriptionSymbolColor: Color {
-        if case .failed = model.cliProxyState { return .orange }
         return model.subscriptionAccounts.contains { !$0.disabled } ? .green : .secondary
     }
 

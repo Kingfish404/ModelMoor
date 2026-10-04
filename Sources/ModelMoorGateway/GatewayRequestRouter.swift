@@ -3,6 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 import ModelMoorCore
+import ModelMoorSystem
 
 public struct GatewayRequest: Sendable {
     public var method: String
@@ -24,12 +25,49 @@ public struct GatewayPreparedRequest: Sendable {
     public var urlRequest: URLRequest
     public var routeConfiguration: ModelRouteConfiguration?
     var budgetLedger: GatewayBudgetLedger?
+    var subscriptionRefresh: SubscriptionRefreshContext?
+    var claudeCodeSubscription: ClaudeCodeSubscriptionContext?
+    var grokBuildSubscription: GrokBuildSubscriptionContext?
+    var kimiCodeSubscription: KimiCodeSubscriptionContext?
 
     public init(routeID: UUID, endpointID: UUID, urlRequest: URLRequest) {
         self.routeID = routeID
         self.endpointID = endpointID
         self.urlRequest = urlRequest
     }
+}
+
+struct SubscriptionRefreshContext: Sendable {
+    let accountID: UUID
+    let vault: SubscriptionCredentialVault
+    let oauthClient: SubscriptionOAuthClient
+    let apiRequest: SubscriptionAPIRequest
+    let upstreamModel: String
+}
+
+struct ClaudeCodeSubscriptionContext: Sendable {
+    let accountID: UUID
+    let credential: SubscriptionOAuthCredential
+    let vault: SubscriptionCredentialVault?
+    let oauthClient: SubscriptionOAuthClient?
+    let apiRequest: SubscriptionAPIRequest
+    let upstreamModel: String
+}
+
+struct GrokBuildSubscriptionContext: Sendable {
+    let accountID: UUID
+    let credential: GrokBuildSubscriptionCredential
+    let vault: SubscriptionCredentialVault?
+    let apiRequest: SubscriptionAPIRequest
+    let upstreamModel: String
+}
+
+struct KimiCodeSubscriptionContext: Sendable {
+    let accountID: UUID
+    let profile: KimiCodeSubscriptionProfile
+    let vault: SubscriptionCredentialVault?
+    let apiRequest: SubscriptionAPIRequest
+    let upstreamModel: String
 }
 
 public struct GatewayLocalResponse: Sendable, Equatable {
@@ -54,32 +92,61 @@ public struct GatewaySnapshot: Equatable, Sendable {
     public var gatewayAPIKeys: [String]
     public var endpointSecrets: [UUID: String]
     public var availableMappingIDs: Set<UUID>
+    public var subscriptionCredentials: [SubscriptionOAuthProvider: SubscriptionOAuthCredential]
+    public var subscriptionAccountIDs: [SubscriptionOAuthProvider: UUID]
+    public var subscriptionCredentialVault: SubscriptionCredentialVault?
+    public var subscriptionOAuthClient: SubscriptionOAuthClient?
 
     public init(
         configuration: ModelMoorConfiguration,
         gatewayAPIKeys: [String],
         endpointSecrets: [UUID: String] = [:],
-        availableMappingIDs: Set<UUID>? = nil
+        availableMappingIDs: Set<UUID>? = nil,
+        subscriptionCredentials: [SubscriptionOAuthProvider: SubscriptionOAuthCredential] = [:],
+        subscriptionAccountIDs: [SubscriptionOAuthProvider: UUID] = [:],
+        subscriptionCredentialVault: SubscriptionCredentialVault? = nil,
+        subscriptionOAuthClient: SubscriptionOAuthClient? = nil
     ) {
         self.configuration = configuration
         self.gatewayAPIKeys = gatewayAPIKeys
         self.endpointSecrets = endpointSecrets
         self.availableMappingIDs = availableMappingIDs
             ?? Set(configuration.tunnels.flatMap(\.enabledMappings).map(\.id))
+        self.subscriptionCredentials = subscriptionCredentials
+        self.subscriptionAccountIDs = subscriptionAccountIDs
+        self.subscriptionCredentialVault = subscriptionCredentialVault
+        self.subscriptionOAuthClient = subscriptionOAuthClient
     }
 
     public init(
         configuration: ModelMoorConfiguration,
         gatewayToken: String,
         endpointSecrets: [UUID: String] = [:],
-        availableMappingIDs: Set<UUID>? = nil
+        availableMappingIDs: Set<UUID>? = nil,
+        subscriptionCredentials: [SubscriptionOAuthProvider: SubscriptionOAuthCredential] = [:],
+        subscriptionAccountIDs: [SubscriptionOAuthProvider: UUID] = [:],
+        subscriptionCredentialVault: SubscriptionCredentialVault? = nil,
+        subscriptionOAuthClient: SubscriptionOAuthClient? = nil
     ) {
         self.init(
             configuration: configuration,
             gatewayAPIKeys: [gatewayToken],
             endpointSecrets: endpointSecrets,
-            availableMappingIDs: availableMappingIDs
+            availableMappingIDs: availableMappingIDs,
+            subscriptionCredentials: subscriptionCredentials,
+            subscriptionAccountIDs: subscriptionAccountIDs,
+            subscriptionCredentialVault: subscriptionCredentialVault,
+            subscriptionOAuthClient: subscriptionOAuthClient
         )
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.configuration == rhs.configuration
+            && lhs.gatewayAPIKeys == rhs.gatewayAPIKeys
+            && lhs.endpointSecrets == rhs.endpointSecrets
+            && lhs.availableMappingIDs == rhs.availableMappingIDs
+            && lhs.subscriptionCredentials == rhs.subscriptionCredentials
+            && lhs.subscriptionAccountIDs == rhs.subscriptionAccountIDs
     }
 }
 
@@ -165,6 +232,199 @@ public struct GatewayRequestRouter: Sendable {
               endpoint.enabled,
               endpoint.kind == .openAICompatible else {
             return .local(error(status: 503, code: "endpoint_unavailable", message: "The selected endpoint is unavailable."))
+        }
+        if case .managedCLIProxy = endpoint.source {
+            return .local(error(
+                status: 503,
+                code: "legacy_subscription_endpoint",
+                message: "This legacy CLIProxyAPI endpoint is retired. Sign in through ModelMoor's native subscription accounts."
+            ))
+        }
+
+        let isSubscriptionEndpoint: Bool
+        switch endpoint.source {
+        case .modelMoorSubscription: isSubscriptionEndpoint = true
+        case .sshMapping, .directHTTPS: isSubscriptionEndpoint = false
+        case .managedCLIProxy: isSubscriptionEndpoint = false
+        }
+        let isCodexModel = route.upstreamModel.hasPrefix("codex/") || route.upstreamModel.hasPrefix("gpt-")
+        if isSubscriptionEndpoint, isCodexModel {
+            guard let credential = snapshot.subscriptionCredentials[.codex],
+                  let accountID = snapshot.subscriptionAccountIDs[.codex] else {
+                if case .modelMoorSubscription = endpoint.source {
+                    return .local(error(
+                        status: 424,
+                        code: "subscription_credential_unavailable",
+                        message: "Sign in to a Codex subscription in ModelMoor before routing this model."
+                    ))
+                }
+                return .local(error(
+                    status: 424,
+                    code: "credential_unavailable",
+                    message: "The selected endpoint credential is unavailable."
+                ))
+            }
+            do {
+                let suffix = String(pathAndQuery.path.dropFirst("/v1".count))
+                let upstreamPath = joinedPath(endpoint.basePath, suffix)
+                let apiRequest = SubscriptionAPIRequest(
+                    method: request.method,
+                    pathAndQuery: upstreamPath + (pathAndQuery.query.map { "?\($0)" } ?? ""),
+                    headers: request.headers,
+                    body: request.body
+                )
+                let upstreamRequest = try CodexSubscriptionAPIAdapter().prepare(
+                    apiRequest,
+                    credential: credential,
+                    upstreamModel: route.upstreamModel
+                )
+                var prepared = GatewayPreparedRequest(
+                    routeID: route.id,
+                    endpointID: endpoint.id,
+                    urlRequest: upstreamRequest
+                )
+                prepared.routeConfiguration = route
+                prepared.budgetLedger = budgetLedger
+                if let vault = snapshot.subscriptionCredentialVault,
+                   let oauthClient = snapshot.subscriptionOAuthClient {
+                    prepared.subscriptionRefresh = SubscriptionRefreshContext(
+                        accountID: accountID,
+                        vault: vault,
+                        oauthClient: oauthClient,
+                        apiRequest: apiRequest,
+                        upstreamModel: route.upstreamModel
+                    )
+                }
+                return .upstream(prepared)
+            } catch {
+                return .local(self.error(
+                    status: 424,
+                    code: "subscription_credential_unavailable",
+                    message: error.localizedDescription
+                ))
+            }
+        }
+        let isClaudeModel = route.upstreamModel.lowercased().hasPrefix("claude/")
+            || route.upstreamModel.lowercased().hasPrefix("claude-")
+        if isSubscriptionEndpoint, isClaudeModel {
+            if let credential = snapshot.subscriptionCredentials[.claude],
+               let accountID = snapshot.subscriptionAccountIDs[.claude] {
+                let suffix = String(pathAndQuery.path.dropFirst("/v1".count))
+                let upstreamPath = joinedPath(endpoint.basePath, suffix)
+                let apiRequest = SubscriptionAPIRequest(
+                    method: request.method,
+                    pathAndQuery: upstreamPath + (pathAndQuery.query.map { "?\($0)" } ?? ""),
+                    headers: request.headers,
+                    body: request.body
+                )
+                let placeholderURL = URL(string: "http://claude-code.local/")!
+                var prepared = GatewayPreparedRequest(
+                    routeID: route.id,
+                    endpointID: endpoint.id,
+                    urlRequest: URLRequest(url: placeholderURL)
+                )
+                prepared.routeConfiguration = route
+                prepared.budgetLedger = budgetLedger
+                prepared.claudeCodeSubscription = ClaudeCodeSubscriptionContext(
+                    accountID: accountID,
+                    credential: credential,
+                    vault: snapshot.subscriptionCredentialVault,
+                    oauthClient: snapshot.subscriptionOAuthClient,
+                    apiRequest: apiRequest,
+                    upstreamModel: route.upstreamModel
+                )
+                return .upstream(prepared)
+            }
+            if case .modelMoorSubscription = endpoint.source {
+                return .local(error(
+                    status: 424,
+                    code: "subscription_credential_unavailable",
+                    message: "Sign in to a Claude subscription in ModelMoor before routing this model."
+                ))
+            }
+        }
+        let isGrokModel = route.upstreamModel.lowercased().hasPrefix("grok/")
+            || route.upstreamModel.lowercased().hasPrefix("grok-")
+        if isSubscriptionEndpoint, isGrokModel {
+            if let storedCredential = snapshot.subscriptionCredentials[.xai],
+               let credential = GrokBuildSubscriptionCredential(storedOAuthCredential: storedCredential),
+               let accountID = snapshot.subscriptionAccountIDs[.xai] {
+                let suffix = String(pathAndQuery.path.dropFirst("/v1".count))
+                let upstreamPath = joinedPath(endpoint.basePath, suffix)
+                let apiRequest = SubscriptionAPIRequest(
+                    method: request.method,
+                    pathAndQuery: upstreamPath + (pathAndQuery.query.map { "?\($0)" } ?? ""),
+                    headers: request.headers,
+                    body: request.body
+                )
+                var prepared = GatewayPreparedRequest(
+                    routeID: route.id,
+                    endpointID: endpoint.id,
+                    urlRequest: URLRequest(url: URL(string: "http://grok-build.local/")!)
+                )
+                prepared.routeConfiguration = route
+                prepared.budgetLedger = budgetLedger
+                prepared.grokBuildSubscription = GrokBuildSubscriptionContext(
+                    accountID: accountID,
+                    credential: credential,
+                    vault: snapshot.subscriptionCredentialVault,
+                    apiRequest: apiRequest,
+                    upstreamModel: route.upstreamModel
+                )
+                return .upstream(prepared)
+            }
+            if case .modelMoorSubscription = endpoint.source {
+                return .local(error(
+                    status: 424,
+                    code: "subscription_credential_unavailable",
+                    message: "Sign in to a Grok Build subscription in ModelMoor before routing this model."
+                ))
+            }
+        }
+        let isKimiModel = route.upstreamModel.lowercased().hasPrefix("kimi/")
+            || route.upstreamModel.lowercased().hasPrefix("kimi-")
+        if isSubscriptionEndpoint, isKimiModel {
+            if let storedCredential = snapshot.subscriptionCredentials[.kimi],
+               let profile = KimiCodeSubscriptionProfile(storedOAuthCredential: storedCredential),
+               let accountID = snapshot.subscriptionAccountIDs[.kimi] {
+                let suffix = String(pathAndQuery.path.dropFirst("/v1".count))
+                let upstreamPath = joinedPath(endpoint.basePath, suffix)
+                let apiRequest = SubscriptionAPIRequest(
+                    method: request.method,
+                    pathAndQuery: upstreamPath + (pathAndQuery.query.map { "?\($0)" } ?? ""),
+                    headers: request.headers,
+                    body: request.body
+                )
+                var prepared = GatewayPreparedRequest(
+                    routeID: route.id,
+                    endpointID: endpoint.id,
+                    urlRequest: URLRequest(url: URL(string: "http://kimi-code.local/")!)
+                )
+                prepared.routeConfiguration = route
+                prepared.budgetLedger = budgetLedger
+                prepared.kimiCodeSubscription = KimiCodeSubscriptionContext(
+                    accountID: accountID,
+                    profile: profile,
+                    vault: snapshot.subscriptionCredentialVault,
+                    apiRequest: apiRequest,
+                    upstreamModel: route.upstreamModel
+                )
+                return .upstream(prepared)
+            }
+            if case .modelMoorSubscription = endpoint.source {
+                return .local(error(
+                    status: 424,
+                    code: "subscription_credential_unavailable",
+                    message: "Sign in to a Kimi Code subscription in ModelMoor before routing this model."
+                ))
+            }
+        }
+        if case .modelMoorSubscription = endpoint.source {
+            return .local(error(
+                status: 501,
+                code: "subscription_provider_unavailable",
+                message: "This ModelMoor subscription provider does not have a native request adapter yet."
+            ))
         }
         if case let .sshMapping(mappingID, _) = endpoint.source,
            !snapshot.availableMappingIDs.contains(mappingID) {

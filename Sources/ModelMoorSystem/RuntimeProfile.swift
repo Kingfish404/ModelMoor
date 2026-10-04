@@ -21,14 +21,13 @@ public struct ModelMoorRuntimeProfile: Equatable, Sendable {
     public let legacyConfigurationURL: URL?
     public let applicationSupportDirectoryURL: URL
     public let tokenUsageURL: URL
-    public let cliProxyDataDirectoryURL: URL
+    public let legacySubscriptionDataDirectoryURL: URL
     public let preferencesURL: URL
     /// Legacy service namespace retained for compatibility, not file storage.
     public let secretService: String
     public let legacySecretServices: [String]
     public let runtimeDirectoryURL: URL
     public let defaultGatewayPort: Int
-    public let defaultCLIProxyPort: Int
     public let supportsLaunchAtLogin: Bool
     public let supportsSoftwareUpdates: Bool
 
@@ -41,7 +40,6 @@ public struct ModelMoorRuntimeProfile: Equatable, Sendable {
     public var initialConfiguration: ModelMoorConfiguration {
         ModelMoorConfiguration(
             gateway: GatewayConfiguration(listenPort: defaultGatewayPort),
-            cliProxy: CLIProxyConfiguration(listenPort: defaultCLIProxyPort),
             hasPreparedRecommendedEndpoints: false
         )
     }
@@ -108,7 +106,7 @@ public struct ModelMoorRuntimeProfile: Equatable, Sendable {
                     : nil,
                 applicationSupportDirectoryURL: dataDirectory,
                 tokenUsageURL: dataDirectory.appendingPathComponent("token-usage.jsonl"),
-                cliProxyDataDirectoryURL: dataDirectory.appendingPathComponent("CLIProxyAPI", isDirectory: true),
+                legacySubscriptionDataDirectoryURL: dataDirectory.appendingPathComponent("CLIProxyAPI", isDirectory: true),
                 preferencesURL: preferences.appendingPathComponent("\(bundleIdentifier).plist"),
                 secretService: SecretStoreSupport.productionService,
                 legacySecretServices: [SecretStoreSupport.legacyProductionService],
@@ -118,7 +116,6 @@ public struct ModelMoorRuntimeProfile: Equatable, Sendable {
                     userID: userID
                 ),
                 defaultGatewayPort: 17_777,
-                defaultCLIProxyPort: 18_317,
                 supportsLaunchAtLogin: PlatformPaths.supportsLaunchAtLogin,
                 supportsSoftwareUpdates: true
             )
@@ -136,7 +133,7 @@ public struct ModelMoorRuntimeProfile: Equatable, Sendable {
                     : nil,
                 applicationSupportDirectoryURL: dataDirectory,
                 tokenUsageURL: dataDirectory.appendingPathComponent("token-usage.jsonl"),
-                cliProxyDataDirectoryURL: dataDirectory.appendingPathComponent("CLIProxyAPI", isDirectory: true),
+                legacySubscriptionDataDirectoryURL: dataDirectory.appendingPathComponent("CLIProxyAPI", isDirectory: true),
                 preferencesURL: preferences.appendingPathComponent("\(bundleIdentifier).plist"),
                 secretService: "com.modelmoor.dev.api-token",
                 legacySecretServices: [],
@@ -146,7 +143,6 @@ public struct ModelMoorRuntimeProfile: Equatable, Sendable {
                     userID: userID
                 ),
                 defaultGatewayPort: 27_777,
-                defaultCLIProxyPort: 28_317,
                 supportsLaunchAtLogin: false,
                 supportsSoftwareUpdates: false
             )

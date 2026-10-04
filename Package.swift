@@ -37,13 +37,15 @@ let package = Package(
             dependencies: [
                 "ModelMoorCore",
                 .product(name: "NIOCore", package: "swift-nio"),
-                .product(name: "NIOPosix", package: "swift-nio")
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio")
             ]
         ),
         .target(
             name: "ModelMoorGateway",
             dependencies: [
                 "ModelMoorCore",
+                "ModelMoorSystem",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio")
@@ -95,7 +97,7 @@ let package = Package(
         ),
         .testTarget(
             name: "ModelMoorGatewayTests",
-            dependencies: ["ModelMoorGateway"]
+            dependencies: ["ModelMoorGateway", "ModelMoorSystem"]
         )
     ]
 )

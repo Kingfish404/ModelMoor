@@ -148,9 +148,18 @@ struct EndpointDetailView: View {
                     }
                 }
             case let .managedCLIProxy(origin):
-                LabeledContent("Managed helper", value: "CLIProxyAPI")
+                LabeledContent("Endpoint type", value: "Legacy subscription endpoint")
                 LabeledContent("Loopback origin", value: origin.absoluteString)
                 Text("Provider credentials are managed in Subscription.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Manage Subscription") {
+                    model.showSubscriptionAccounts()
+                }
+                .buttonStyle(.link)
+            case .modelMoorSubscription:
+                LabeledContent("Routing", value: "Native ModelMoor OAuth")
+                Text("Provider credentials stay in ModelMoor's secret store. No subscription helper runs for this endpoint.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Button("Manage Subscription") {
@@ -307,8 +316,10 @@ struct EndpointDetailView: View {
     private var routeCount: Int { model.configuration.routes.filter { $0.endpointID == endpointID }.count }
 
     private func isManaged(_ endpoint: APIEndpointConfiguration) -> Bool {
-        if case .managedCLIProxy = endpoint.source { return true }
-        return false
+        switch endpoint.source {
+        case .managedCLIProxy, .modelMoorSubscription: true
+        case .sshMapping, .directHTTPS: false
+        }
     }
     private var deleteConfirmationTitle: String {
         original.map(model.isRecognizedLLMEndpoint) == false ? "Delete this other service?" : "Delete this API endpoint?"
@@ -351,7 +362,8 @@ struct EndpointDetailView: View {
     private func sourceSummary(_ endpoint: APIEndpointConfiguration) -> String {
         switch endpoint.source {
         case let .directHTTPS(origin): "Direct HTTP(S), \(origin.host ?? origin.absoluteString)"
-        case .managedCLIProxy: "Managed subscription proxy on this Mac"
+        case .managedCLIProxy: "Legacy subscription endpoint migrated from an earlier ModelMoor version"
+        case .modelMoorSubscription: "Native ModelMoor subscription routing"
         case let .sshMapping(mappingID, _): "Remote over SSH, \(connectionForMapping(mappingID)?.name ?? "missing connection")"
         }
     }
@@ -359,7 +371,8 @@ struct EndpointDetailView: View {
     private func sourceType(_ endpoint: APIEndpointConfiguration) -> String {
         switch endpoint.source {
         case .directHTTPS: "Direct HTTP(S) API"
-        case .managedCLIProxy: "Managed subscription proxy"
+        case .managedCLIProxy: "Legacy subscription endpoint"
+        case .modelMoorSubscription: "ModelMoor subscription"
         case .sshMapping: "Remote over SSH"
         }
     }

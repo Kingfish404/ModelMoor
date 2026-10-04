@@ -3,6 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 import ModelMoorCore
+import ModelMoorSystem
 import NIOCore
 import NIOHTTP1
 import NIOPosix
@@ -476,6 +477,18 @@ private final class GatewayResponseWriter: @unchecked Sendable {
     }
 
     func proxy(_ request: GatewayPreparedRequest) async {
+        if let claudeCodeSubscription = request.claudeCodeSubscription {
+            await proxyClaudeCodeSubscription(request, context: claudeCodeSubscription)
+            return
+        }
+        if let grokBuildSubscription = request.grokBuildSubscription {
+            await proxyGrokBuildSubscription(request, context: grokBuildSubscription)
+            return
+        }
+        if let kimiCodeSubscription = request.kimiCodeSubscription {
+            await proxyKimiCodeSubscription(request, context: kimiCodeSubscription)
+            return
+        }
         let bridge = UpstreamSessionBridge()
         let upstream = Self.sharedUpstreamSession
         await withTaskCancellationHandler {
@@ -489,6 +502,199 @@ private final class GatewayResponseWriter: @unchecked Sendable {
             // requests and can continue reusing the shared HTTPS connection pool.
             bridge.cancel()
             self.upstreamCancellationObserver?()
+        }
+    }
+
+    private func proxyClaudeCodeSubscription(
+        _ request: GatewayPreparedRequest,
+        context: ClaudeCodeSubscriptionContext
+    ) async {
+        do {
+            let credential: SubscriptionOAuthCredential
+            if let vault = context.vault, let oauthClient = context.oauthClient {
+                credential = try await vault.usableCredential(for: context.accountID, using: oauthClient)
+            } else {
+                credential = context.credential
+            }
+            let completion = try await ClaudeCodeSubscriptionAPIAdapter().complete(
+                context.apiRequest,
+                credential: credential,
+                upstreamModel: context.upstreamModel
+            )
+            let requestObject = (try? JSONSerialization.jsonObject(with: context.apiRequest.body)) as? [String: Any]
+            let isStreaming = requestObject?["stream"] as? Bool == true
+            let responseBody = isStreaming
+                ? ClaudeCodeChatCompletionStreamEncoder.encode(from: completion.body, includeUsage: (requestObject?["stream_options"] as? [String: Any])?["include_usage"] as? Bool == true)
+                : completion.body
+            let totalTokens: Int64?
+            if let input = completion.inputTokens, let output = completion.outputTokens {
+                totalTokens = input + output
+            } else {
+                totalTokens = nil
+            }
+            if let route = request.routeConfiguration {
+                request.budgetLedger?.record(
+                    route: route,
+                    tokens: totalTokens,
+                    inputTokens: completion.inputTokens,
+                    outputTokens: completion.outputTokens
+                )
+            }
+            reportUsage(totalTokens, for: request)
+            await writeLocal(GatewayLocalResponse(
+                status: 200,
+                headers: [
+                    "Content-Type": isStreaming ? "text/event-stream; charset=utf-8" : "application/json",
+                    "Cache-Control": "no-cache"
+                ],
+                body: responseBody
+            ))
+        } catch is CancellationError {
+            return
+        } catch {
+            let status: Int
+            if let error = error as? ClaudeCodeSubscriptionError {
+                switch error {
+                case .unsupportedRequest, .unsupportedTools, .unsupportedContent, .invalidRequest:
+                    status = 400
+                case .executableMissing:
+                    status = 424
+                case .launchFailed, .processFailed, .invalidResponse:
+                    status = 502
+                case .cancelled:
+                    return
+                }
+            } else {
+                status = 424
+            }
+            await writeLocal(GatewayLocalResponse(
+                status: status,
+                body: GatewayHTTPHandler.errorBody(
+                    code: "claude_subscription_error",
+                    message: error.localizedDescription
+                )
+            ))
+        }
+    }
+
+    private func proxyGrokBuildSubscription(
+        _ request: GatewayPreparedRequest,
+        context: GrokBuildSubscriptionContext
+    ) async {
+        do {
+            let completion = try await GrokBuildSubscriptionAPIAdapter().complete(
+                context.apiRequest,
+                credential: context.credential,
+                upstreamModel: context.upstreamModel
+            )
+            if let updatedCredential = completion.updatedCredential {
+                try await context.vault?.updateCredential(
+                    updatedCredential.storedOAuthCredential,
+                    for: context.accountID
+                )
+            }
+            let requestObject = (try? JSONSerialization.jsonObject(with: context.apiRequest.body)) as? [String: Any]
+            let isStreaming = requestObject?["stream"] as? Bool == true
+            let responseBody = isStreaming
+                ? ClaudeCodeChatCompletionStreamEncoder.encode(
+                    from: completion.body,
+                    includeUsage: (requestObject?["stream_options"] as? [String: Any])?["include_usage"] as? Bool == true
+                )
+                : completion.body
+            let totalTokens: Int64?
+            if let input = completion.inputTokens, let output = completion.outputTokens {
+                totalTokens = input + output
+            } else {
+                totalTokens = nil
+            }
+            if let route = request.routeConfiguration {
+                request.budgetLedger?.record(
+                    route: route,
+                    tokens: totalTokens,
+                    inputTokens: completion.inputTokens,
+                    outputTokens: completion.outputTokens
+                )
+            }
+            reportUsage(totalTokens, for: request)
+            await writeLocal(GatewayLocalResponse(
+                status: 200,
+                headers: [
+                    "Content-Type": isStreaming ? "text/event-stream; charset=utf-8" : "application/json",
+                    "Cache-Control": "no-cache"
+                ],
+                body: responseBody
+            ))
+        } catch is CancellationError {
+            return
+        } catch {
+            let status: Int
+            if let error = error as? GrokBuildSubscriptionError {
+                switch error {
+                case .unsupportedRequest, .unsupportedTools, .unsupportedContent, .invalidRequest:
+                    status = 400
+                case .executableMissing, .invalidCredential:
+                    status = 424
+                case .launchFailed, .processFailed, .invalidResponse:
+                    status = 502
+                case .cancelled:
+                    return
+                }
+            } else {
+                status = 424
+            }
+            await writeLocal(GatewayLocalResponse(
+                status: status,
+                body: GatewayHTTPHandler.errorBody(
+                    code: "grok_subscription_error",
+                    message: error.localizedDescription
+                )
+            ))
+        }
+    }
+
+    private func proxyKimiCodeSubscription(
+        _ request: GatewayPreparedRequest,
+        context: KimiCodeSubscriptionContext
+    ) async {
+        do {
+            let completion = try await KimiCodeSubscriptionAPIAdapter().complete(
+                request: context.apiRequest,
+                profile: context.profile,
+                upstreamModel: context.upstreamModel
+            )
+            if let updatedProfile = completion.updatedProfile {
+                try await context.vault?.updateCredential(updatedProfile.storedOAuthCredential, for: context.accountID)
+            }
+            let requestObject = (try? JSONSerialization.jsonObject(with: context.apiRequest.body)) as? [String: Any]
+            let isStreaming = requestObject?["stream"] as? Bool == true
+            let responseBody = isStreaming
+                ? ClaudeCodeChatCompletionStreamEncoder.encode(
+                    from: completion.body,
+                    includeUsage: (requestObject?["stream_options"] as? [String: Any])?["include_usage"] as? Bool == true
+                )
+                : completion.body
+            reportUsage(nil, for: request)
+            await writeLocal(GatewayLocalResponse(
+                status: 200,
+                headers: ["Content-Type": isStreaming ? "text/event-stream; charset=utf-8" : "application/json", "Cache-Control": "no-cache"],
+                body: responseBody
+            ))
+        } catch is CancellationError {
+            return
+        } catch {
+            let status: Int
+            if let error = error as? KimiCodeSubscriptionError {
+                switch error {
+                case .unsupportedRequest, .unsupportedTools, .unsupportedContent, .invalidRequest: status = 400
+                case .executableMissing, .invalidCredential: status = 424
+                case .launchFailed, .processFailed, .protocolError, .invalidResponse: status = 502
+                case .cancelled: return
+                }
+            } else { status = 424 }
+            await writeLocal(GatewayLocalResponse(
+                status: status,
+                body: GatewayHTTPHandler.errorBody(code: "kimi_subscription_error", message: error.localizedDescription)
+            ))
         }
     }
 
@@ -509,10 +715,22 @@ private final class GatewayResponseWriter: @unchecked Sendable {
             }
         }
         do {
+            var upstreamRequest = request.urlRequest
+            if let refresh = request.subscriptionRefresh {
+                let credential = try await refresh.vault.usableCredential(
+                    for: refresh.accountID,
+                    using: refresh.oauthClient
+                )
+                upstreamRequest = try CodexSubscriptionAPIAdapter().prepare(
+                    refresh.apiRequest,
+                    credential: credential,
+                    upstreamModel: refresh.upstreamModel
+                )
+            }
             let (chunks, rawResponse) = try await bridge.start(
                 session: upstream.session,
                 router: upstream.router,
-                request: request.urlRequest
+                request: upstreamRequest
             )
             guard let response = rawResponse as? HTTPURLResponse else {
                 await writeLocal(GatewayLocalResponse(
@@ -689,6 +907,40 @@ private final class GatewayResponseWriter: @unchecked Sendable {
         } else {
             _ = try? await context.eventLoop.submit(operation).get()
         }
+    }
+}
+
+enum ClaudeCodeChatCompletionStreamEncoder {
+    static func encode(from body: Data, includeUsage: Bool) -> Data {
+        guard let root = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let choice = (root["choices"] as? [[String: Any]])?.first,
+              let message = choice["message"] as? [String: Any] else {
+            return Data("data: [DONE]\n\n".utf8)
+        }
+        let id = root["id"] as? String ?? "chatcmpl-\(UUID().uuidString.lowercased())"
+        let created = root["created"] as? Int ?? Int(Date().timeIntervalSince1970)
+        let model = root["model"] as? String ?? "claude"
+        func event(_ choices: [[String: Any]], usage: Any? = nil) -> Data {
+            var object: [String: Any] = [
+                "id": id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": choices
+            ]
+            if let usage { object["usage"] = usage }
+            guard let encoded = try? JSONSerialization.data(withJSONObject: object),
+                  let text = String(data: encoded, encoding: .utf8) else { return Data() }
+            return Data("data: \(text)\n\n".utf8)
+        }
+        var stream = event([["index": 0, "delta": ["role": "assistant"], "finish_reason": NSNull()]])
+        if let content = message["content"] as? String, !content.isEmpty {
+            stream.append(event([["index": 0, "delta": ["content": content], "finish_reason": NSNull()]]))
+        }
+        stream.append(event([["index": 0, "delta": [:], "finish_reason": choice["finish_reason"] ?? "stop"]]))
+        if includeUsage, let usage = root["usage"] { stream.append(event([], usage: usage)) }
+        stream.append(Data("data: [DONE]\n\n".utf8))
+        return stream
     }
 }
 

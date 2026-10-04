@@ -464,7 +464,9 @@ final class TUISnapshotRendererTests: XCTestCase {
         )
 
         var subscriptionConfiguration = initial
-        subscriptionConfiguration.configuration.cliProxy.enabled.toggle()
+        subscriptionConfiguration.subscriptions.accounts = [
+            SubscriptionAccount(id: "codex-account", name: "codex@example.test", provider: "codex")
+        ]
         XCTAssertEqual(
             TUIRenderInvalidation.sections(previous: initial, next: subscriptionConfiguration),
             [.subscriptions, .settings]

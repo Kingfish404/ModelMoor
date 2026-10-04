@@ -34,7 +34,6 @@ BUILD_OPTIONS=(--disable-sandbox --cache-path "$PROJECT_DIR/.build/cache" --buil
 
 cd "$PROJECT_DIR"
 "$PROJECT_DIR/Scripts/generate-icons.sh"
-CLIPROXY_BINARY="$("$PROJECT_DIR/Scripts/fetch-cliproxyapi.sh")"
 # CLI ships from the root package; the macOS app lives in Apps/macOS so the
 # root package stays buildable on Linux (docs/PLAN.md milestone B).
 swift build "${BUILD_OPTIONS[@]}" -c release --product modelmoor
@@ -52,7 +51,6 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources/Licenses"
 cp "$APP_BINARY" "$APP_DIR/Contents/MacOS/ModelMoor"
-cp "$CLIPROXY_BINARY" "$APP_DIR/Contents/MacOS/CLIProxyAPI"
 cp "$PROJECT_DIR/Support/Info.plist" "$APP_DIR/Contents/Info.plist"
 EN_LPROJ="$APP_RESOURCE_BUNDLE/en.lproj"
 ZH_HANS_LPROJ="$APP_RESOURCE_BUNDLE/zh-hans.lproj"
@@ -75,10 +73,10 @@ cp "$APP_PACKAGE_CHECKOUTS/swift-nio/Sources/NIOPosix/PrivacyInfo.xcprivacy" \
   "$APP_DIR/Contents/Resources/PrivacyInfo.xcprivacy"
 cp "$APP_PACKAGE_CHECKOUTS/swift-nio/LICENSE.txt" \
   "$APP_DIR/Contents/Resources/Licenses/SwiftNIO-LICENSE.txt"
+cp "$PROJECT_DIR/third_party/magpie/LICENSE" \
+  "$APP_DIR/Contents/Resources/Licenses/Magpie-LICENSE.txt"
 cp "$APP_PACKAGE_CHECKOUTS/swift-nio/Sources/CNIOLLHTTP/LICENSE" \
   "$APP_DIR/Contents/Resources/Licenses/CNIOLLHTTP-LICENSE.txt"
-cp "${CLIPROXY_BINARY:h}/LICENSE" \
-  "$APP_DIR/Contents/Resources/Licenses/CLIProxyAPI-LICENSE.txt"
 xcrun actool "$PROJECT_DIR/Resources/Assets.xcassets" \
   --compile "$APP_DIR/Contents/Resources" \
   --platform macosx \
@@ -89,8 +87,7 @@ xcrun actool "$PROJECT_DIR/Resources/Assets.xcassets" \
 SIGN_IDENTITY="${MODELMOOR_CODE_SIGN_IDENTITY:--}"
 print "Signing with $SIGN_IDENTITY"
 codesign --force --sign - \
-  "$CLI_BINARY" \
-  "$APP_DIR/Contents/MacOS/CLIProxyAPI"
+  "$CLI_BINARY"
 codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"
 
 print "Built $BUILD_PROFILE app: $APP_DIR"

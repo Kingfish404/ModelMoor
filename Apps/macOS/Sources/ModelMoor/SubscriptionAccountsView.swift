@@ -1,19 +1,17 @@
 import ModelMoorCore
+import ModelMoorApplication
 import ModelMoorSystem
 import SwiftUI
 
 struct SubscriptionAccountsView: View {
     @EnvironmentObject private var model: AppModel
     let configureModels: () -> Void
-    @State private var accountToDelete: CLIProxyAccount?
+    @State private var accountToDelete: SubscriptionAccount?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
-                if case let .failed(message) = model.cliProxyState {
-                    serviceFailure(message)
-                }
                 accountPool
                 connectAccounts
                 unifiedAPIHandoff
@@ -54,7 +52,7 @@ struct SubscriptionAccountsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
-            if model.configuration.cliProxy.enabled {
+            if !model.subscriptionAccounts.isEmpty {
                 Button {
                     Task { await model.refreshSubscriptionAccountState() }
                 } label: {
@@ -63,13 +61,6 @@ struct SubscriptionAccountsView: View {
                 .disabled(isRefreshing || !model.subscriptionActionAvailability.canRefreshAccounts)
             }
         }
-    }
-
-    private func serviceFailure(_ message: String) -> some View {
-        Label(message, systemImage: "exclamationmark.triangle.fill")
-            .font(.callout)
-            .foregroundStyle(.orange)
-            .padding(.vertical, 2)
     }
 
     private var accountPool: some View {
@@ -106,7 +97,7 @@ struct SubscriptionAccountsView: View {
         }
     }
 
-    private func accountRow(_ account: CLIProxyAccount) -> some View {
+    private func accountRow(_ account: SubscriptionAccount) -> some View {
         HStack(spacing: 12) {
             Image(systemName: account.disabled ? "person.crop.circle.badge.xmark" : "person.crop.circle.badge.checkmark")
                 .foregroundStyle(account.disabled ? Color.secondary : Color.green)
@@ -167,13 +158,13 @@ struct SubscriptionAccountsView: View {
 
             GroupBox {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(CLIProxyLoginProvider.allCases.enumerated()), id: \.element) { index, provider in
+                    ForEach(Array(SubscriptionProvider.allCases.enumerated()), id: \.element) { index, provider in
                         providerRow(
                             provider: provider,
                             symbol: providerSymbol(provider),
                             description: providerDescription(provider)
                         )
-                        if index < CLIProxyLoginProvider.allCases.count - 1 {
+                        if index < SubscriptionProvider.allCases.count - 1 {
                             Divider().padding(.vertical, 8)
                         }
                     }
@@ -190,7 +181,7 @@ struct SubscriptionAccountsView: View {
     }
 
     private func providerRow(
-        provider: CLIProxyLoginProvider,
+        provider: SubscriptionProvider,
         symbol: String,
         description: String
     ) -> some View {
@@ -217,8 +208,8 @@ struct SubscriptionAccountsView: View {
     }
 
     private func loginProgress(
-        _ login: CLIProxyLoginSession,
-        provider: CLIProxyLoginProvider
+        _ login: SubscriptionLoginSession,
+        provider: SubscriptionProvider
     ) -> some View {
         HStack(alignment: .top, spacing: 10) {
             ProgressView()
@@ -270,7 +261,7 @@ struct SubscriptionAccountsView: View {
                     }
                     Spacer()
                     Button("Configure in Unified API…") {
-                        model.preferredModelEndpointID = model.configuration.cliProxy.endpointID
+                        model.preferredModelEndpointID = APIEndpointConfiguration.nativeSubscriptionEndpointID
                         configureModels()
                     }
                     .disabled(subscriptionModelCount == 0)
@@ -281,7 +272,7 @@ struct SubscriptionAccountsView: View {
     }
 
     private var privacyNote: some View {
-        Text("Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth refresh credentials are stored in ModelMoor's private application-data directory because the bundled helper requires file-backed credentials.")
+        Text("Sign-in happens on the provider's site, and ModelMoor never receives your password. OAuth credentials are stored in ModelMoor's private secret store and are not written to local agent files.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -292,12 +283,12 @@ struct SubscriptionAccountsView: View {
     }
 
     private var subscriptionModelCount: Int {
-        model.inspections[model.configuration.cliProxy.endpointID]?.models?.count ?? 0
+        model.inspections[APIEndpointConfiguration.nativeSubscriptionEndpointID]?.models?.count ?? 0
     }
 
     private var isRefreshing: Bool {
         model.isRefreshingSubscriptionAccounts
-            || model.inspectingEndpointIDs.contains(model.configuration.cliProxy.endpointID)
+            || model.inspectingEndpointIDs.contains(APIEndpointConfiguration.nativeSubscriptionEndpointID)
     }
 
     private var headerTitle: String {
@@ -316,17 +307,15 @@ struct SubscriptionAccountsView: View {
     }
 
     private var headerSymbol: String {
-        if case .failed = model.cliProxyState { return "exclamationmark.triangle.fill" }
         if model.activeSubscriptionLogin != nil { return "person.crop.circle.badge.clock" }
         return model.subscriptionAccounts.isEmpty ? "person.2.badge.plus" : "person.2.fill"
     }
 
     private var headerColor: Color {
-        if case .failed = model.cliProxyState { return .orange }
         return enabledAccountCount > 0 ? .green : .secondary
     }
 
-    private func accountEnabledBinding(_ account: CLIProxyAccount) -> Binding<Bool> {
+    private func accountEnabledBinding(_ account: SubscriptionAccount) -> Binding<Bool> {
         Binding(
             get: {
                 !(model.subscriptionAccounts.first(where: { $0.id == account.id })?.disabled ?? account.disabled)
@@ -337,7 +326,7 @@ struct SubscriptionAccountsView: View {
         )
     }
 
-    private func accountSummary(_ account: CLIProxyAccount) -> String {
+    private func accountSummary(_ account: SubscriptionAccount) -> String {
         let provider = providerDisplayName(account.provider)
         let state = account.disabled ? "excluded from routing" : (account.status ?? "ready")
         return "\(provider) · \(state)"
@@ -347,31 +336,27 @@ struct SubscriptionAccountsView: View {
         switch provider.lowercased() {
         case "codex": "ChatGPT / Codex"
         case "claude", "anthropic": "Claude Code"
-        case "antigravity": "Google Antigravity"
-        case "kimi": "Kimi"
-        case "xai", "grok": "xAI / Grok"
-        case "gemini", "gemini-cli": "Gemini CLI"
+        case "kimi": "Kimi Code"
+        case "xai", "grok": "Grok Build"
         default: provider.capitalized
         }
     }
 
-    private func providerSymbol(_ provider: CLIProxyLoginProvider) -> String {
+    private func providerSymbol(_ provider: SubscriptionProvider) -> String {
         switch provider {
         case .codex: "bubble.left.and.text.bubble.right"
         case .claude: "command"
-        case .antigravity: "sparkles"
         case .kimi: "moon.stars"
-        case .xai: "xmark"
+        case .xai: "sparkles"
         }
     }
 
-    private func providerDescription(_ provider: CLIProxyLoginProvider) -> String {
+    private func providerDescription(_ provider: SubscriptionProvider) -> String {
         switch provider {
         case .codex: "Use a ChatGPT subscription for Codex and compatible OpenAI models."
         case .claude: "Use a Claude subscription through the Claude Code OAuth flow."
-        case .antigravity: "Use Google Antigravity models through a Google account."
         case .kimi: "Use a Kimi subscription through its device sign-in flow."
-        case .xai: "Use a Grok subscription through the xAI device sign-in flow."
+        case .xai: "Use Grok Build's device sign-in with a temporary, isolated profile."
         }
     }
 

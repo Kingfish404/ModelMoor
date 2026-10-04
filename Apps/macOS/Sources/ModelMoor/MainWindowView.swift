@@ -259,11 +259,11 @@ struct MainWindowView: View {
     }
 
     private var subscriptionModelCount: Int {
-        model.inspections[model.configuration.cliProxy.endpointID]?.models?.count ?? 0
+        model.inspections[APIEndpointConfiguration.nativeSubscriptionEndpointID]?.models?.count ?? 0
     }
 
     private func showSubscriptionModels() {
-        model.preferredModelEndpointID = model.configuration.cliProxy.endpointID
+        model.preferredModelEndpointID = APIEndpointConfiguration.nativeSubscriptionEndpointID
         showsAddModels = true
     }
 

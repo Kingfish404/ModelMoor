@@ -55,10 +55,10 @@ struct GeneralSettingsView: View {
                 )
 
                 persistenceRow(
-                    title: AppLocalization.string("Subscription Data"),
-                    detail: AppLocalization.string("CLIProxyAPI helper configuration and OAuth account files. This folder can contain sensitive credentials."),
-                    url: model.runtimeProfile.cliProxyDataDirectoryURL,
-                    directoryURL: model.runtimeProfile.cliProxyDataDirectoryURL
+                    title: AppLocalization.string("Legacy Subscription Data"),
+                    detail: AppLocalization.string("Retained from earlier ModelMoor versions. Current subscription sign-in does not read this folder."),
+                    url: model.runtimeProfile.legacySubscriptionDataDirectoryURL,
+                    directoryURL: model.runtimeProfile.legacySubscriptionDataDirectoryURL
                 )
 
                 persistenceRow(

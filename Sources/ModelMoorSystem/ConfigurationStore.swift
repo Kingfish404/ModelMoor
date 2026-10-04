@@ -89,8 +89,12 @@ public actor ConfigurationStore {
                 } catch {
                     throw ConfigurationError.unreadable("Could not decode configuration: \(error.localizedDescription)")
                 }
+            case 4:
+                result = try migrateV4(data)
             case 2:
                 result = try migrateV2(data)
+            case 3:
+                result = try migrateV3(data)
             case 1:
                 result = try migrateV1(data)
             default:
@@ -109,10 +113,14 @@ public actor ConfigurationStore {
             if FileManager.default.fileExists(atPath: fileURL.path) {
                 let existing = try readConfigurationData()
                 let schema = try decodeSchema(from: existing)
-                if schema == 2 {
+                if schema == 4 {
+                    _ = try migrateV4(existing)
+                } else if schema == 2 {
                     _ = try migrateV2(existing)
                 } else if schema == 1 {
                     _ = try migrateV1(existing)
+                } else if schema == 3 {
+                    _ = try migrateV3(existing)
                 } else if schema != ModelMoorConfiguration.currentSchemaVersion {
                     throw ConfigurationError.unsupportedSchema(schema)
                 }
@@ -154,6 +162,38 @@ public actor ConfigurationStore {
     private var v2BackupURL: URL {
         fileURL.deletingLastPathComponent()
             .appendingPathComponent("\(fileURL.lastPathComponent).v2.backup")
+    }
+
+    private var v3BackupURL: URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent("\(fileURL.lastPathComponent).v3.backup")
+    }
+
+    private var v4BackupURL: URL {
+        fileURL.deletingLastPathComponent()
+            .appendingPathComponent("\(fileURL.lastPathComponent).v4.backup")
+    }
+
+    private func migrateV4(_ data: Data) throws -> ModelMoorConfiguration {
+        let migrated = try ConfigurationMigration.migrateV4(data)
+        let prepared = preparedRecommendedEndpoints(in: migrated)
+        try prepareDirectory()
+        if !FileManager.default.fileExists(atPath: v4BackupURL.path) {
+            try DurableAtomicWriter.writeAtomically(data, to: v4BackupURL, replacing: false)
+        }
+        try persistLocked(prepared)
+        return prepared
+    }
+
+    private func migrateV3(_ data: Data) throws -> ModelMoorConfiguration {
+        let migrated = try ConfigurationMigration.migrateV3(data)
+        let prepared = preparedRecommendedEndpoints(in: migrated)
+        try prepareDirectory()
+        if !FileManager.default.fileExists(atPath: v3BackupURL.path) {
+            try DurableAtomicWriter.writeAtomically(data, to: v3BackupURL, replacing: false)
+        }
+        try persistLocked(prepared)
+        return prepared
     }
 
     private func migrateV2(_ data: Data) throws -> ModelMoorConfiguration {

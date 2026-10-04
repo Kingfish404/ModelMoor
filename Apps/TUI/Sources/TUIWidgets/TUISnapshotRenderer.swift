@@ -15,7 +15,7 @@ public enum TUISnapshotRenderer {
         lines.append("runtime\t\(runtimeDescription(snapshot: snapshot, recordedOwner: recordedOwner))")
         lines.append("gateway\t\(gatewayDescription(snapshot.gatewayState))")
         lines.append("usage-24h\t\(snapshot.usage.lastDay) tokens")
-        lines.append("subscriptions\t\(configuration.cliProxy.enabled ? "enabled" : "disabled")\t\(snapshot.subscriptions.accounts.count) accounts")
+        lines.append("subscriptions\tnative\t\(snapshot.subscriptions.accounts.count) accounts")
 
         lines.append("")
         lines.append("[moorings]")

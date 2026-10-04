@@ -26,16 +26,6 @@ public enum SessionError: LocalizedError, Equatable {
     }
 }
 
-public typealias CLIProxyServiceFactory = @Sendable (
-    URL,
-    @escaping @Sendable (CLIProxyRuntimeState) -> Void
-) -> any CLIProxyServicing
-
-public typealias CLIProxyManagementFactory = @Sendable (
-    Int,
-    String
-) -> any CLIProxyManaging
-
 /// The single business entry point shared by the macOS GUI, the `modelmoor`
 /// CLI and `modelmoor-tui` (docs/PLAN.md §4). Owns configuration
 /// transactions, deletion cascades, tunnel/Gateway lifecycle, endpoint
@@ -51,6 +41,10 @@ public actor ModelMoorSession {
     private let store: ConfigurationStore
     private let interactiveSecretStore: any ModelMoorSecretStore
     private let nonInteractiveSecretStore: any ModelMoorSecretStore
+    let subscriptionCredentialVault: SubscriptionCredentialVault
+    let subscriptionOAuthClient: SubscriptionOAuthClient
+    let subscriptionOAuthLoginCoordinator: SubscriptionOAuthLoginCoordinator
+    var subscriptionOAuthLoginTask: Task<Void, Never>?
     private let deletionCoordinator: ConfigurationDeletionCoordinator
     public let dataUsageStore: DataUsageStore
     private let usageStore: TokenUsageStore
@@ -75,13 +69,6 @@ public actor ModelMoorSession {
         keyIDs: Set<UUID>,
         task: Task<Set<UUID>, Never>
     )?
-    let cliProxyServiceFactory: CLIProxyServiceFactory
-    let cliProxyManagementFactory: CLIProxyManagementFactory
-    let subscriptionUsageProvider: any SubscriptionUsageProviding
-    var managedSubscriptionCoordinator: ManagedSubscriptionCoordinator?
-    var managedSubscriptionCoordinatorID: UUID?
-    var managedSubscriptionSnapshotRevision: UInt64 = 0
-
     public init(
         profile: ModelMoorRuntimeProfile = .current,
         store: ConfigurationStore? = nil,
@@ -92,13 +79,8 @@ public actor ModelMoorSession {
         diagnostics: DiagnosticLog = DiagnosticLog(),
         runtimeLockURL: URL? = nil,
         gatewayCoordinator: GatewayServiceCoordinator? = nil,
-        cliProxyServiceFactory: @escaping CLIProxyServiceFactory = { dataDirectoryURL, handler in
-            CLIProxyService(dataDirectoryURL: dataDirectoryURL, stateHandler: handler)
-        },
-        cliProxyManagementFactory: @escaping CLIProxyManagementFactory = { port, password in
-            CLIProxyManagementClient(port: port, managementPassword: password)
-        },
-        subscriptionUsageProvider: (any SubscriptionUsageProviding)? = nil
+        grokExecutableURL: URL? = GrokBuildSubscriptionAPIAdapter.findExecutable(),
+        kimiExecutableURL: URL? = KimiCodeSubscriptionAPIAdapter.findExecutable()
     ) throws {
         let resolvedSecretStore: any ModelMoorSecretStore
         if let secretStore {
@@ -118,14 +100,19 @@ public actor ModelMoorSession {
             initialConfiguration: profile.initialConfiguration,
             endpointCredentialLookup: { try resolvedSecretStore.token(for: $0) }
         )
-        let resolvedSubscriptionUsageProvider = subscriptionUsageProvider ?? CodexBarUsageService(
-            authDirectoryURL: profile.cliProxyDataDirectoryURL
-                .appendingPathComponent("auths", isDirectory: true)
-        )
         self.profile = profile
         self.store = resolvedStore
         self.interactiveSecretStore = resolvedSecretStore
         self.nonInteractiveSecretStore = resolvedSecretStore.disallowingUserInteraction()
+        let credentialVault = SubscriptionCredentialVault(secretStore: resolvedSecretStore.disallowingUserInteraction())
+        self.subscriptionCredentialVault = credentialVault
+        self.subscriptionOAuthClient = SubscriptionOAuthClient()
+        self.subscriptionOAuthLoginCoordinator = SubscriptionOAuthLoginCoordinator(
+            vault: credentialVault,
+            client: SubscriptionOAuthClient(),
+            grokExecutableURL: grokExecutableURL,
+            kimiExecutableURL: kimiExecutableURL
+        )
         self.deletionCoordinator = ConfigurationDeletionCoordinator(
             store: resolvedStore,
             secretStore: resolvedSecretStore
@@ -137,14 +124,7 @@ public actor ModelMoorSession {
         self.diagnostics = diagnostics
         self.runtimeLockURL = runtimeLockURL ?? profile.runtimeLockURL
         self.gatewayCoordinator = gatewayCoordinator
-        self.cliProxyServiceFactory = cliProxyServiceFactory
-        self.cliProxyManagementFactory = cliProxyManagementFactory
-        self.subscriptionUsageProvider = resolvedSubscriptionUsageProvider
-        self.snapshot = AppSnapshot(
-            subscriptions: ManagedSubscriptionSnapshot(
-                isUsageProviderAvailable: resolvedSubscriptionUsageProvider.isAvailable
-            )
-        )
+        self.snapshot = AppSnapshot()
     }
 
     // MARK: - Snapshots
@@ -354,15 +334,11 @@ public actor ModelMoorSession {
     }
 
     public func stopRuntime() async {
+        if subscriptionOAuthLoginTask != nil {
+            await cancelSubscriptionLogin()
+        }
         networkMonitor?.cancel()
         networkMonitor = nil
-        await managedSubscriptionCoordinator?.shutdown()
-        managedSubscriptionCoordinator = nil
-        managedSubscriptionCoordinatorID = nil
-        managedSubscriptionSnapshotRevision = 0
-        snapshot.subscriptions = ManagedSubscriptionSnapshot(
-            isUsageProviderAvailable: subscriptionUsageProvider.isAvailable
-        )
         if let gatewayCoordinator {
             _ = await gatewayCoordinator.reconcile(snapshot: nil)
         }
@@ -458,7 +434,6 @@ public actor ModelMoorSession {
     public func suspendRuntime(reason: String) async {
         guard ownership != nil else { return }
         runtimeSuspended = true
-        await managedSubscriptionCoordinator?.setSuspended(true)
         if let gatewayCoordinator {
             snapshot.gatewayState = await gatewayCoordinator.reconcile(snapshot: nil)
         }
@@ -502,6 +477,20 @@ public actor ModelMoorSession {
 
     public func inspectEndpoint(_ endpointID: UUID) async {
         guard let endpoint = snapshot.configuration.endpoints.first(where: { $0.id == endpointID }) else {
+            return
+        }
+        if case .modelMoorSubscription = endpoint.source {
+            do { try await refreshNativeSubscriptionModels() }
+            catch {
+                snapshot.inspections[endpointID] = EndpointInspection(
+                    endpointID: endpointID,
+                    url: nil,
+                    checkedAt: Date(),
+                    errorMessage: error.localizedDescription,
+                    classification: .llmAPI
+                )
+                emit()
+            }
             return
         }
         let mappings = Dictionary(
@@ -554,6 +543,7 @@ public actor ModelMoorSession {
         )
         let candidates = snapshot.configuration.endpoints.compactMap { endpoint -> InspectionRequest? in
             guard endpoint.enabled else { return nil }
+            if case .modelMoorSubscription = endpoint.source { return nil }
             if case let .sshMapping(mappingID, _) = endpoint.source,
                !connectedMappingIDs.contains(mappingID) {
                 return nil
@@ -849,11 +839,7 @@ public actor ModelMoorSession {
     // MARK: - Internal accessors for same-module extensions
 
     func secretStore() -> any ModelMoorSecretStore { interactiveSecretStore }
-    func backgroundSecretStore() -> any ModelMoorSecretStore { nonInteractiveSecretStore }
     func ownsRuntime() -> Bool { ownership != nil }
-    func isRuntimeSuspended() -> Bool { runtimeSuspended }
-    func cliProxyDataDirectoryURL() -> URL { profile.cliProxyDataDirectoryURL }
-    func diagnosticLog() -> DiagnosticLog { diagnostics }
 
     /// Reconciles the listener after secret-only changes (key rotation etc.)
     /// that did not alter the configuration file.
@@ -912,11 +898,16 @@ public actor ModelMoorSession {
             let connectedMappings = Set(configuration.tunnels.compactMap { tunnel -> [UUID]? in
                 snapshot.tunnelStatuses[tunnel.id]?.phase == .connected ? tunnel.enabledMappings.map(\.id) : nil
             }.flatMap { $0 })
+            let subscriptionRouting = try await subscriptionRoutingCredentials()
             let gatewaySnapshot = GatewaySnapshot(
                 configuration: configuration,
                 gatewayAPIKeys: gatewayAPIKeys,
                 endpointSecrets: secrets,
-                availableMappingIDs: connectedMappings
+                availableMappingIDs: connectedMappings,
+                subscriptionCredentials: subscriptionRouting.credentials,
+                subscriptionAccountIDs: subscriptionRouting.accountIDs,
+                subscriptionCredentialVault: subscriptionCredentialVault,
+                subscriptionOAuthClient: subscriptionOAuthClient
             )
             snapshot.gatewayState = await gatewayRuntime().reconcile(snapshot: gatewaySnapshot)
             switch snapshot.gatewayState {
@@ -947,6 +938,20 @@ public actor ModelMoorSession {
             )
         }
         emit()
+    }
+
+    private func subscriptionRoutingCredentials() async throws -> (credentials: [SubscriptionOAuthProvider: SubscriptionOAuthCredential], accountIDs: [SubscriptionOAuthProvider: UUID]) {
+        let accounts = try await subscriptionCredentialVault.accounts().filter { $0.enabled }
+        var credentials: [SubscriptionOAuthProvider: SubscriptionOAuthCredential] = [:]
+        var accountIDs: [SubscriptionOAuthProvider: UUID] = [:]
+        for account in accounts where credentials[account.provider] == nil {
+            credentials[account.provider] = try await subscriptionCredentialVault.usableCredential(
+                for: account.id,
+                using: subscriptionOAuthClient
+            )
+            accountIDs[account.provider] = account.id
+        }
+        return (credentials, accountIDs)
     }
 
     private func gatewayRuntime() -> GatewayServiceCoordinator {

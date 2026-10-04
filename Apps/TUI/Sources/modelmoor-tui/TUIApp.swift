@@ -904,29 +904,25 @@ final class TUIApp: @unchecked Sendable {
     }
 
     private func showSubscriptionForm() {
-        let providers = CLIProxyLoginProvider.allCases
+        let providers = SubscriptionProvider.allCases
             .enumerated()
             .map { "\($0.offset + 1): \($0.element.displayName)" }
             .joined(separator: "  ")
         TUIFormDialog.request(
             "Connect subscription",
             message: "Choose a provider. The sign-in page opens outside ModelMoor. \(providers)",
-            fields: [
-                TUIFormField("Provider number", "1"),
-                TUIFormField("Proxy port", String(currentSnapshot.configuration.cliProxy.listenPort))
-            ]
+            fields: [TUIFormField("Provider number", "1")]
         ) { [weak self] values in
-            guard let values, values.count == 2,
+            guard let values, values.count == 1,
                   let raw = values.first?.trimmed,
                   let index = Int(raw),
-                  CLIProxyLoginProvider.allCases.indices.contains(index - 1),
-                  let port = Int(values[1].trimmed) else {
-                self?.showError("Choose a provider number from 1 to \(CLIProxyLoginProvider.allCases.count) and enter a valid proxy port.")
+                  SubscriptionProvider.allCases.indices.contains(index - 1) else {
+                self?.showError("Choose a provider number from 1 to \(SubscriptionProvider.allCases.count).")
                 return
             }
             guard let self else { return }
-            let provider = CLIProxyLoginProvider.allCases[index - 1]
-            self.beginSubscriptionLogin(provider: provider, proxyPort: port)
+            let provider = SubscriptionProvider.allCases[index - 1]
+            self.beginSubscriptionLogin(provider: provider)
         }
     }
 
@@ -936,29 +932,20 @@ final class TUIApp: @unchecked Sendable {
             return
         }
         guard let provider = subscriptionProvider(named: providerName) else {
-            let supported = CLIProxyLoginProvider.allCases.map(\.rawValue).joined(separator: ", ")
+            let supported = SubscriptionProvider.allCases.map(\.rawValue).joined(separator: ", ")
             showError("Unknown subscription provider: " + providerName + ". Use: " + supported)
             return
         }
-        beginSubscriptionLogin(
-            provider: provider,
-            proxyPort: currentSnapshot.configuration.cliProxy.listenPort
-        )
+        beginSubscriptionLogin(provider: provider)
     }
 
     private func beginSubscriptionLogin(
-        provider: CLIProxyLoginProvider,
-        proxyPort: Int
+        provider: SubscriptionProvider
     ) {
         Task { [weak self] in
             guard let self else { return }
             do {
                 try await ensureRuntimeOwnership()
-                var candidate = currentSnapshot.configuration
-                candidate.cliProxy.enabled = true
-                candidate.cliProxy.listenPort = proxyPort
-                candidate.reconcileManagedCLIProxyEndpoint()
-                try await session.saveConfiguration(candidate)
                 let login = try await session.startSubscriptionLogin(provider)
                 let code = login.userCode.map { "\nDevice code: \($0)" } ?? ""
                 DispatchQueue.main.async { [weak self] in
@@ -978,10 +965,6 @@ final class TUIApp: @unchecked Sendable {
     }
 
     private func refreshSubscriptionAccounts() {
-        guard currentSnapshot.configuration.cliProxy.enabled else {
-            showError("Subscription proxy is disabled. Run subs first.")
-            return
-        }
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -1007,9 +990,9 @@ final class TUIApp: @unchecked Sendable {
         showStatus("Subscriptions pane selected")
     }
 
-    private func subscriptionProvider(named name: String) -> CLIProxyLoginProvider? {
+    private func subscriptionProvider(named name: String) -> SubscriptionProvider? {
         let normalized = name.trimmed.lowercased()
-        return CLIProxyLoginProvider.allCases.first {
+        return SubscriptionProvider.allCases.first {
             $0.rawValue == normalized || $0.displayName.lowercased() == normalized
         }
     }
@@ -1118,7 +1101,7 @@ final class TUIApp: @unchecked Sendable {
             "  SSH connections: \(configuration.tunnels.count)",
             "  API endpoints:   \(configuration.endpoints.count)",
             "  Unified API:     \(configuration.gateway.enabled ? "enabled on 127.0.0.1:\(configuration.gateway.listenPort)" : "disabled")",
-            "  Subscription proxy: \(configuration.cliProxy.enabled ? "enabled on 127.0.0.1:\(configuration.cliProxy.listenPort)" : "disabled")",
+            "  Subscription accounts: native ModelMoor sign-in",
             "",
             "Subscriptions",
             "  See pane \(TUIPane.subscriptions.rawValue) for accounts, sign-in, and proxy status."
@@ -1143,14 +1126,10 @@ final class TUIApp: @unchecked Sendable {
 
     private func renderSubscriptions(_ snapshot: AppSnapshot) {
         let subscriptions = snapshot.subscriptions
-        let configuration = snapshot.configuration.cliProxy
         var lines = [
             "Subscriptions",
             "",
-            "Proxy:  " + (configuration.enabled
-                ? "enabled on 127.0.0.1:\(configuration.listenPort)"
-                : "disabled"),
-            "Helper: " + subscriptionRuntimeDescription(subscriptions.runtimeState)
+            "Sign-in and credentials are managed by ModelMoor."
         ]
         if let provider = subscriptions.activeProvider,
            let login = subscriptions.activeLogin {
@@ -1180,24 +1159,15 @@ final class TUIApp: @unchecked Sendable {
         lines += [
             "",
             "Shell actions",
-            "  subs                            Configure the subscription proxy",
+            "  subs                            Connect native subscription accounts",
             "  subs login <provider>           Start a provider sign-in",
             "  subs accounts                   Return to this page",
-            "  subs refresh                    Refresh accounts and proxy health",
+            "  subs refresh                    Refresh subscription accounts",
             "  subs cancel                     Cancel the active sign-in",
             "",
             "Text is read-only. Focus it with Tab or mouse; Ctrl-Space + arrows selects, Ctrl-C copies."
         ]
         subscriptionsText.text = lines.joined(separator: "\n")
-    }
-
-    private func subscriptionRuntimeDescription(_ state: CLIProxyRuntimeState) -> String {
-        switch state {
-        case .stopped: "stopped"
-        case .starting: "starting"
-        case .running: "running"
-        case let .failed(message): "failed: \(message)"
-        }
     }
 
     private func renderTunnels(_ snapshot: AppSnapshot) {

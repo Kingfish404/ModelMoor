@@ -79,8 +79,8 @@ The Mac must keep ModelMoor and the SSH connection running. Both listeners remai
 - Models SSH forwarding as a transport and API endpoints separately
 - Keeps non-LLM forwarded services in a collapsed **Others** sidebar group instead of reporting API warnings
 - Supports direct HTTP(S) OpenAI-compatible endpoints such as DeepSeek, with one file-backed secret per endpoint
-- Connects ChatGPT/Codex, Claude Code, Google Antigravity, Kimi, and xAI/Grok subscription accounts through a bundled, ModelMoor-managed CLIProxyAPI helper
-- Keeps that managed helper under the same single runtime-owner boundary as SSH and the Unified API, so a read-only GUI never launches a duplicate process while the CLI or TUI owns the runtime
+- Signs in to ChatGPT/Codex and Claude directly, and to Kimi Code and Grok Build through device flows in temporary isolated profiles; credentials are stored in ModelMoor's private secret store without reading or changing local agent credentials
+- Routes Codex Responses natively and text-only Claude, Kimi Code and Grok chat through their genuine provider CLIs
 - Discovers OpenAI-compatible and Ollama models and reports endpoint health independently from SSH state
 - Searches SSH connections, endpoints, forwarded services, and discovered model IDs directly from the macOS sidebar
 - Localizes critical macOS navigation, commands, status, settings, and update flows in English and Simplified Chinese
@@ -128,16 +128,16 @@ curl http://127.0.0.1:17777/v1/chat/completions \
 
 ### Use subscription accounts
 
-Open **Subscription** in the sidebar, then connect ChatGPT/Codex, Claude Code, Google Antigravity, Kimi, or xAI/Grok. Sign-in happens in the provider's browser or device flow; ModelMoor never receives the account password. Add multiple accounts for the same provider when needed, and disable individual accounts without removing their credentials. After models are discovered, configure the models to expose from **Unified API**.
+Open **Subscription** in the sidebar to sign in to ChatGPT/Codex, Claude, Kimi Code, or Grok Build. ModelMoor stores these credentials in its private secret store and never reads or changes a local agent's profile. Codex accounts have a native Responses API route. Claude, Kimi Code and Grok models run through their genuine installed CLIs with tools disabled and isolated temporary profiles; these routes currently accept text-only `/v1/chat/completions` requests. Antigravity subscription login is not supported. Migration removes old CLIProxyAPI settings and endpoints; helper data is retained untouched. After models are discovered, configure the models to expose from **Unified API**.
 
-ModelMoor starts the bundled CLIProxyAPI helper only on loopback, gives it a private internal API key and management password from the private secrets file, monitors its process, and stops it with the app. The public client still uses only the ModelMoor Unified API URL and its ModelMoor API key.
+The native Codex route calls the subscription backend directly. Claude Code receives a ModelMoor-owned OAuth token; Kimi Code and Grok Build receive ModelMoor-managed device-login credentials. Each CLI runs in an isolated temporary home with caller tools disabled. Public clients use only the ModelMoor Unified API URL and its ModelMoor API key.
 
 ## Requirements
 
 - macOS 14 or later
 - Xcode 26 / Swift 6.1 or later (for building from source)
 - `rsvg-convert` (`brew install librsvg`) or Inkscape for generating AppIcon PNGs
-- Network access on the first app build, to download the pinned CLIProxyAPI release artifact
+- Network access for SwiftPM dependencies and provider sign-in/API calls
 
 ## Building and Running
 
@@ -149,7 +149,7 @@ the app build.
 make run
 ```
 
-`make run` builds and opens the isolated **ModelMoor Dev** app. Its settings, secret files, ports, SSH runtime, usage history, and managed CLIProxyAPI data are separate from an installed production version. Use `make app` only when assembling the production-profile app at `.build/app/ModelMoor.app`.
+`make run` builds and opens the isolated **ModelMoor Dev** app. Its settings, secret files, ports, SSH runtime, usage history, and optional legacy helper data are separate from an installed production version. Use `make app` only when assembling the production-profile app at `.build/app/ModelMoor.app`.
 
 The production build also produces the release CLI and prints its path when done. After moving the production app to `/Applications`, you can enable start at login from the Settings item at the bottom of the ModelMoor sidebar, or press Command-,.
 
@@ -248,7 +248,7 @@ Non-secret configuration is stored in XDG-style files so it can be inspected, ba
 
 ## Security Boundaries
 
-On macOS, endpoint API keys, Unified API keys, and CLIProxyAPI internal credentials are stored in `~/.config/modelmoor/secrets.json`; development builds use `~/.config/modelmoor-dev/secrets.json`. The containing directory is restricted to `0700` and files to `0600`. `XDG_CONFIG_HOME` overrides `~/.config`; `MODELMOOR_SECRETS_FILE` overrides the full secrets path. `MODELMOOR_CONFIG` changes only the ordinary configuration path, not the secrets path. An explicit secrets override can intentionally share credentials between profiles, so use separate paths for isolation.
+On macOS, endpoint API keys and Unified API keys are stored in `~/.config/modelmoor/secrets.json`; development builds use `~/.config/modelmoor-dev/secrets.json`. The containing directory is restricted to `0700` and files to `0600`. `XDG_CONFIG_HOME` overrides `~/.config`; `MODELMOOR_SECRETS_FILE` overrides the full secrets path. `MODELMOOR_CONFIG` changes only the ordinary configuration path, not the secrets path. An explicit secrets override can intentionally share credentials between profiles, so use separate paths for isolation.
 
 The file is UTF-8 JSON with `schemaVersion: 1` and a `secrets` object mapping account identifiers to secret strings. Writes are atomic and protected by a sibling `secrets.json.lock` file. Files with unsafe permissions, a different owner, or a symbolic-link type are rejected. This is plaintext storage protected by filesystem permissions, not encryption: other processes running as your user and administrators can read it. Keep it out of source control, shared folders, and unencrypted backups; configuration exports do not include it.
 
@@ -261,13 +261,13 @@ Direct API endpoints accept both HTTP and HTTPS, including custom ports and base
 - Local and remote listener addresses only accept `127.0.0.1` or `localhost`.
 - `-R 0.0.0.0:...` and GatewayPorts are not supported yet, to avoid exposing local services to the remote network.
 - Endpoint credentials and Unified API key values are stored only in an owner-only secrets file. Configuration contains only key names, identifiers, and enabled states.
-- The CLIProxyAPI internal API key and management password are generated from the private secrets file. The helper requires its API key in configuration, so ModelMoor materializes that loopback-only key into a mode-0600 generated config while the management password remains environment-only. OAuth access and refresh tokens for subscription providers are file-backed because CLIProxyAPI requires auth files; they live under `~/Library/Application Support/ModelMoor/CLIProxyAPI/auths` inside directories restricted to the current user. Development builds use the separate `ModelMoor Dev` application-data directory.
-- The managed CLIProxyAPI listener and management API bind only to loopback. Remote management is disabled, its control panel is disabled, request logging and upstream retries are disabled, and the management password is passed in memory through the child-process environment rather than written into configuration.
+- Native OAuth access and refresh tokens are stored only in ModelMoor's private secrets file, never in ordinary configuration or local agent files. The Claude runner passes its token to the genuine Claude Code process in its environment, gives it a temporary private home and config directory, disables Claude tools, and removes that directory when the request finishes.
+- Previous versions stored CLIProxyAPI credentials and account files in ModelMoor's private data directories. Current versions do not read or delete those retained files.
 - The Unified API binds only `127.0.0.1`. Bearer authentication is enabled by default, supports multiple independently enabled keys, and can be turned off with an in-app warning. Newly created and rotated keys use the familiar `sk-` prefix. Keys are stored only in the private secrets file. Client credentials are removed before ModelMoor injects only the selected endpoint credential.
 - API inspection only performs GET probes. The Gateway never logs request or response bodies and never retries or falls back to another paid endpoint.
 - Usage history stores only a timestamp, total token count, and internal route/endpoint identifiers. It is based on upstream `usage` fields, so a streaming response is counted only when the upstream includes usage data.
 - Gateway requests are limited to 16 MiB and 64 active requests; file, image/audio upload, CORS, and native Anthropic/Gemini protocol translation are intentionally out of scope.
-- Subscription routing depends on each provider's current subscription terms and CLIProxyAPI's compatibility layer. It does not convert a consumer subscription into an official metered API entitlement; users remain responsible for provider terms, quotas, and account policy.
+- Subscription routing depends on each provider's current subscription terms. Native routing currently covers Codex Responses and text-only Claude Code, Kimi Code, and Grok Build chat through their official CLIs. Google Antigravity subscription login is unsupported. Legacy CLIProxyAPI configuration is migrated off and cannot be enabled; old helper files are retained untouched. Consumer subscriptions do not become official metered API entitlements; users remain responsible for provider terms, quotas, and account policy.
 
 ## Documentation
 

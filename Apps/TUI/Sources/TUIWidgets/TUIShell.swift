@@ -40,7 +40,7 @@ public enum TUIShellParser {
       add api              Add a direct HTTP(S) API endpoint
       subs                 Configure subscription sign-in and proxy port
       subs login <provider>
-                           Start sign-in using codex, claude, antigravity, kimi, or xai
+                           Start sign-in using codex, claude, kimi, or xai
       subs accounts
                            Show subscription accounts and an active sign-in URL
       subs refresh

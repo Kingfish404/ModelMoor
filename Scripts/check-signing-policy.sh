@@ -35,9 +35,14 @@ if [[ "$SIGNING_COMMANDS" == *"--deep"* ]]; then
 fi
 
 case "$SIGNING_COMMANDS" in
-  *'codesign --force --sign -'*'"$CLI_BINARY"'*'"$APP_DIR/Contents/MacOS/CLIProxyAPI"'*'codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"'*) ;;
+  *'codesign --force --sign -'*'"$CLI_BINARY"'*'codesign --force --sign "$SIGN_IDENTITY" "$APP_DIR"'*) ;;
   *)
-    print -u2 "error: sign CLI/helper ad-hoc before signing the outer app once with its identity"
+    print -u2 "error: sign the CLI ad-hoc before signing the outer app once with its identity"
     exit 1
     ;;
 esac
+
+if grep -Eq 'fetch-cliproxyapi|CLIProxyAPI-LICENSE|Contents/MacOS/CLIProxyAPI' "$BUILD_SCRIPT"; then
+  print -u2 "error: release app builds must not fetch or bundle CLIProxyAPI"
+  exit 1
+fi

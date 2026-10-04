@@ -23,7 +23,7 @@ ModelMoor 与 New API、one-api 一类服务端网关属于同一品类名词（
 | 部署 | 单机、进程内 library、无 daemon | Docker / Compose / 集群 + 反向代理 |
 | 侦听 | 硬编码 `127.0.0.1`，不支持 GatewayPorts | 公网或 LAN HTTP 服务 |
 | 规模参照 | Swift 78 文件 / 约 26,400 行 | 48.1k stars、305 贡献者、524 releases |
-| 持久化 | JSON + `flock` + revision CAS（schema v3） | SQLite / MySQL / PostgreSQL + Redis |
+| 持久化 | JSON + `flock` + revision CAS（schema v5） | SQLite / MySQL / PostgreSQL + Redis |
 | 许可 | MIT | AGPLv3（+ 商业授权） |
 | 核心隐喻 | 插座：跨 SSH 边界搬运 API | 枢纽：中心化聚合与分发 |
 
@@ -34,7 +34,7 @@ flowchart LR
     subgraph MM["ModelMoor（客户端 / 单用户 / loopback）"]
         SSH["SSH transport<br/>-L / -R / -D"]
         KC["独立密钥文件"]
-        SUB["受管 CLIProxyAPI helper<br/>订阅账号与协议适配"]
+        SUB["ModelMoor 原生订阅路径<br/>Codex Responses + Claude Code 隔离调用"]
         LOOP["127.0.0.1 出口<br/>无 CORS / 无上传 / 不公网"]
     end
     subgraph UP["上游来源（消费方视角）"]
@@ -85,7 +85,7 @@ Gateway 只做 bearer 凭据校验，不产生用户、组织、角色、per-key
 
 ### 边界三：协议面
 
-进程内 Gateway 只接受 `kind == .openAICompatible` 端点并透明转发，不做 OpenAI 与 Anthropic、Gemini 之间的语义转换。订阅账号的协议适配由受管 CLIProxyAPI helper 承担，该能力不计入 ModelMoor 的对外承诺。
+进程内 Gateway 只接受 `kind == .openAICompatible` 端点，不做通用协议转换。Codex 订阅通过 ModelMoor 自有 OAuth 凭据直连 Responses API；Claude Code、Kimi Code 与 Grok Build 订阅分别通过隔离运行的官方 CLI 提供文本聊天路由。Google Antigravity 订阅登录暂不支持。CLIProxyAPI 已退出运行路径；旧配置迁移时会关闭 helper，旧数据保留且不读取或删除。
 
 理由：语义转换是一个持续追赶上游的长期维护面，且订阅账号适配涉及各服务商条款，不应与核心转发路径绑定在同一承诺层级。后果：原生 Claude 或 Gemini 协议客户端需要经由 helper 转换后才能接入。
 

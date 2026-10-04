@@ -3,21 +3,15 @@ import ModelMoorCore
 import ModelMoorSystem
 
 public enum ManagedSubscriptionError: LocalizedError, Equatable {
-    case proxyUnavailable
-    case managementCredentialUnavailable
-    case loginFailed(String)
-    case loginTimedOut
+    case providerUnsupported(String)
+    case accountUnavailable
 
     public var errorDescription: String? {
         switch self {
-        case .proxyUnavailable:
-            "The managed subscription proxy is not running."
-        case .managementCredentialUnavailable:
-            "The subscription proxy management credential is unavailable in the secret store."
-        case let .loginFailed(message):
-            message
-        case .loginTimedOut:
-            "Account sign-in timed out. Start the sign-in again."
+        case let .providerUnsupported(provider):
+            "\(provider) does not have a ModelMoor-managed subscription route."
+        case .accountUnavailable:
+            "This subscription account is no longer available in ModelMoor's secret store."
         }
     }
 }
@@ -39,13 +33,10 @@ public struct ManagedSubscriptionActionAvailability: Equatable, Sendable {
 }
 
 public enum ManagedSubscriptionInteractionPolicy {
-    /// Command state shared by every presentation. Starting a first login may
-    /// enable and launch the helper, while account refresh/mutation requires
-    /// the helper to be confirmed running in the owning process.
     public static func availability(
         runtimeState: SessionRuntimeState,
-        cliProxyState: CLIProxyRuntimeState,
-        hasActiveLogin: Bool
+        hasActiveLogin: Bool,
+        hasAccounts: Bool
     ) -> ManagedSubscriptionActionAvailability {
         let ownsRuntime: Bool
         if case .running = runtimeState {
@@ -53,554 +44,186 @@ public enum ManagedSubscriptionInteractionPolicy {
         } else {
             ownsRuntime = false
         }
-        let helperIsRunning: Bool
-        if case .running = cliProxyState {
-            helperIsRunning = true
-        } else {
-            helperIsRunning = false
-        }
         return ManagedSubscriptionActionAvailability(
             canStartLogin: ownsRuntime && !hasActiveLogin,
-            canRefreshAccounts: ownsRuntime && helperIsRunning,
-            canMutateAccounts: ownsRuntime && helperIsRunning
+            canRefreshAccounts: ownsRuntime,
+            canMutateAccounts: ownsRuntime && hasAccounts
         )
-    }
-}
-
-struct ManagedSubscriptionUpdate: Sendable {
-    let coordinatorID: UUID
-    let revision: UInt64
-    let snapshot: ManagedSubscriptionSnapshot
-}
-
-/// Owns the managed helper process, its management API, login polling,
-/// bounded restart policy and optional subscription-usage reader. The actor
-/// deliberately has no AppKit/SwiftUI dependency; ModelMoorSession publishes
-/// its secret-free snapshot to GUI, CLI and TUI consumers.
-actor ManagedSubscriptionCoordinator {
-    nonisolated let id = UUID()
-    private(set) var snapshot: ManagedSubscriptionSnapshot
-
-    private let dataDirectoryURL: URL
-    private let secretStore: any ModelMoorSecretStore
-    private let diagnostics: DiagnosticLog
-    private let serviceFactory: CLIProxyServiceFactory
-    private let managementFactory: CLIProxyManagementFactory
-    private let usageProvider: any SubscriptionUsageProviding
-    private let snapshotHandler: @Sendable (ManagedSubscriptionUpdate) async -> Void
-
-    private var configuration: CLIProxyConfiguration?
-    private var service: (any CLIProxyServicing)?
-    private var loginTask: Task<Void, Never>?
-    private var restartTask: Task<Void, Never>?
-    private var stabilityTask: Task<Void, Never>?
-    private var restartAttempt = 0
-    private var suspended = false
-    private var snapshotRevision: UInt64 = 0
-
-    init(
-        dataDirectoryURL: URL,
-        secretStore: any ModelMoorSecretStore,
-        diagnostics: DiagnosticLog,
-        serviceFactory: @escaping CLIProxyServiceFactory,
-        managementFactory: @escaping CLIProxyManagementFactory,
-        usageProvider: any SubscriptionUsageProviding,
-        snapshotHandler: @escaping @Sendable (ManagedSubscriptionUpdate) async -> Void
-    ) {
-        self.dataDirectoryURL = dataDirectoryURL
-        self.secretStore = secretStore
-        self.diagnostics = diagnostics
-        self.serviceFactory = serviceFactory
-        self.managementFactory = managementFactory
-        self.usageProvider = usageProvider
-        self.snapshotHandler = snapshotHandler
-        self.snapshot = ManagedSubscriptionSnapshot(
-            isUsageProviderAvailable: usageProvider.isAvailable
-        )
-    }
-
-    fileprivate var currentUpdate: ManagedSubscriptionUpdate {
-        ManagedSubscriptionUpdate(
-            coordinatorID: id,
-            revision: snapshotRevision,
-            snapshot: snapshot
-        )
-    }
-
-    func reconcile(configuration: CLIProxyConfiguration, suspended: Bool) async {
-        self.configuration = configuration
-        self.suspended = suspended
-        guard configuration.enabled, !suspended else {
-            await stop(clearAccounts: !configuration.enabled)
-            return
-        }
-
-        do {
-            let apiKey = try secretStore.ensureToken(for: configuration.endpointID)
-            let password = try secretStore.ensureCLIProxyManagementPassword()
-            if service == nil {
-                service = serviceFactory(dataDirectoryURL) { [weak self] state in
-                    Task { await self?.serviceStateChanged(state) }
-                }
-            }
-            guard let service else { return }
-            try await service.start(
-                configuration: configuration,
-                apiKey: apiKey,
-                managementPassword: password
-            )
-            snapshot.runtimeState = await service.state
-            snapshot.errorMessage = nil
-            await publish()
-            try? await refreshAccounts(reportErrors: false)
-        } catch {
-            snapshot.runtimeState = .failed(error.localizedDescription)
-            snapshot.errorMessage = error.localizedDescription
-            await publish()
-            await diagnostics.append(
-                subject: .gateway,
-                severity: .error,
-                category: "cliproxy.failed",
-                summary: error.localizedDescription
-            )
-        }
-    }
-
-    func setSuspended(_ suspended: Bool) async {
-        self.suspended = suspended
-        guard let configuration else { return }
-        await reconcile(configuration: configuration, suspended: suspended)
-    }
-
-    func shutdown() async {
-        configuration = nil
-        suspended = false
-        await stop(clearAccounts: true)
-    }
-
-    func startLogin(_ provider: CLIProxyLoginProvider) async throws -> CLIProxyLoginSession {
-        loginTask?.cancel()
-        loginTask = nil
-        restartTask?.cancel()
-        restartTask = nil
-        stabilityTask?.cancel()
-        stabilityTask = nil
-        restartAttempt = 0
-
-        // `reconcile` records sidecar startup failures in the snapshot. Keep
-        // that actionable failure instead of replacing it with the generic
-        // unavailable error from `managementClient()`.
-        if case let .failed(message) = snapshot.runtimeState {
-            throw ManagedSubscriptionError.loginFailed(message)
-        }
-        let client = try managementClient()
-        do {
-            let login = try await client.startLogin(provider)
-            snapshot.activeProvider = provider
-            snapshot.activeLogin = login
-            snapshot.errorMessage = nil
-            await publish()
-            loginTask = Task { [weak self] in
-                await self?.pollLogin(state: login.state)
-            }
-            return login
-        } catch {
-            snapshot.activeProvider = nil
-            snapshot.activeLogin = nil
-            snapshot.errorMessage = error.localizedDescription
-            await publish()
-            throw error
-        }
-    }
-
-    func cancelLogin() async {
-        loginTask?.cancel()
-        loginTask = nil
-        if let state = snapshot.activeLogin?.state,
-           let client = try? managementClient() {
-            try? await client.cancelLogin(state: state)
-        }
-        snapshot.activeProvider = nil
-        snapshot.activeLogin = nil
-        await publish()
-    }
-
-    func refreshAccounts(reportErrors: Bool = true) async throws {
-        guard configuration?.enabled == true else {
-            snapshot.accounts = []
-            snapshot.usage = [:]
-            await publish()
-            return
-        }
-        guard !snapshot.isRefreshingAccounts else { return }
-        snapshot.isRefreshingAccounts = true
-        await publish()
-        do {
-            snapshot.accounts = try await managementClient().accounts()
-            if reportErrors { snapshot.errorMessage = nil }
-        } catch {
-            if reportErrors {
-                snapshot.errorMessage = error.localizedDescription
-                snapshot.isRefreshingAccounts = false
-                await publish()
-                throw error
-            }
-        }
-        snapshot.isRefreshingAccounts = false
-        await publish()
-    }
-
-    func refreshUsage() async {
-        guard !snapshot.isRefreshingUsage else { return }
-        let accounts = snapshot.accounts.filter { $0.provider.lowercased() == "codex" }
-        guard !accounts.isEmpty, usageProvider.isAvailable else {
-            snapshot.usage = [:]
-            await publish()
-            return
-        }
-        snapshot.isRefreshingUsage = true
-        await publish()
-        let values = await usageProvider.usage(for: accounts)
-        snapshot.usage = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0) })
-        snapshot.isRefreshingUsage = false
-        await publish()
-    }
-
-    func removeAccount(_ account: CLIProxyAccount) async throws {
-        do {
-            try await managementClient().deleteAccount(named: account.name)
-            try await refreshAccounts()
-            snapshot.errorMessage = nil
-            await publish()
-        } catch {
-            snapshot.errorMessage = error.localizedDescription
-            await publish()
-            throw error
-        }
-    }
-
-    func setAccountEnabled(_ account: CLIProxyAccount, enabled: Bool) async throws {
-        guard !snapshot.updatingAccountIDs.contains(account.id) else { return }
-        snapshot.updatingAccountIDs.insert(account.id)
-        await publish()
-        do {
-            try await managementClient().setAccountDisabled(account, disabled: !enabled)
-            try await refreshAccounts()
-            snapshot.errorMessage = nil
-        } catch {
-            snapshot.errorMessage = error.localizedDescription
-            snapshot.updatingAccountIDs.remove(account.id)
-            await publish()
-            throw error
-        }
-        snapshot.updatingAccountIDs.remove(account.id)
-        await publish()
-    }
-
-    private func stop(clearAccounts: Bool) async {
-        loginTask?.cancel()
-        loginTask = nil
-        restartTask?.cancel()
-        restartTask = nil
-        stabilityTask?.cancel()
-        stabilityTask = nil
-        await service?.stop()
-        snapshot.runtimeState = .stopped
-        snapshot.activeLogin = nil
-        snapshot.activeProvider = nil
-        snapshot.isRefreshingAccounts = false
-        snapshot.updatingAccountIDs = []
-        snapshot.isRefreshingUsage = false
-        if clearAccounts {
-            snapshot.accounts = []
-            snapshot.usage = [:]
-        }
-        await publish()
-    }
-
-    private func managementClient() throws -> any CLIProxyManaging {
-        guard case .running = snapshot.runtimeState else {
-            throw ManagedSubscriptionError.proxyUnavailable
-        }
-        guard let configuration else {
-            throw ManagedSubscriptionError.proxyUnavailable
-        }
-        guard let password = try secretStore.cliProxyManagementPassword(), !password.isEmpty else {
-            throw ManagedSubscriptionError.managementCredentialUnavailable
-        }
-        return managementFactory(configuration.listenPort, password)
-    }
-
-    private func pollLogin(state: String) async {
-        do {
-            let client = try managementClient()
-            for _ in 0..<300 {
-                try Task.checkCancellation()
-                let status = try await client.loginStatus(state: state)
-                switch status.status {
-                case "ok":
-                    snapshot.activeLogin = nil
-                    snapshot.activeProvider = nil
-                    loginTask = nil
-                    try await refreshAccounts()
-                    snapshot.errorMessage = nil
-                    await publish()
-                    return
-                case "error":
-                    throw ManagedSubscriptionError.loginFailed(
-                        status.error ?? "Authentication failed."
-                    )
-                default:
-                    try await Task.sleep(for: .seconds(1))
-                }
-            }
-            throw ManagedSubscriptionError.loginTimedOut
-        } catch is CancellationError {
-            return
-        } catch {
-            snapshot.activeLogin = nil
-            snapshot.activeProvider = nil
-            loginTask = nil
-            snapshot.errorMessage = error.localizedDescription
-            await publish()
-        }
-    }
-
-    private func serviceStateChanged(_ state: CLIProxyRuntimeState) async {
-        // State callbacks cross actors through Tasks and can therefore arrive
-        // after a newer lifecycle command. Reject stale start/stop callbacks
-        // using the coordinator's desired state before publishing them.
-        switch state {
-        case .running where configuration?.enabled != true || suspended:
-            return
-        case .starting where configuration?.enabled != true || suspended:
-            return
-        case .starting where snapshot.runtimeState.isRunning:
-            return
-        case .stopped where configuration?.enabled == true && !suspended:
-            return
-        case .failed where configuration?.enabled != true || suspended:
-            return
-        case .failed where snapshot.runtimeState.isFailed:
-            // A service can report the same startup failure through its
-            // callback and then throw the richer launch error. The callback
-            // crosses actors asynchronously, so it may arrive after
-            // `reconcile` has recorded that thrown error. Do not let the late
-            // callback replace its diagnostic context with a raw process
-            // state message.
-            return
-        default:
-            break
-        }
-        snapshot.runtimeState = state
-        await publish()
-        switch state {
-        case .running:
-            restartTask?.cancel()
-            restartTask = nil
-            stabilityTask?.cancel()
-            stabilityTask = Task { [weak self] in
-                do {
-                    try await Task.sleep(for: .seconds(60))
-                } catch {
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                await self?.markStableIfRunning()
-            }
-        case .failed:
-            stabilityTask?.cancel()
-            stabilityTask = nil
-            scheduleRestartIfNeeded()
-        case .stopped:
-            stabilityTask?.cancel()
-            stabilityTask = nil
-        case .starting:
-            break
-        }
-    }
-
-    private func markStableIfRunning() {
-        guard case .running = snapshot.runtimeState else { return }
-        restartAttempt = 0
-        stabilityTask = nil
-    }
-
-    private func scheduleRestartIfNeeded() {
-        guard configuration?.enabled == true,
-              !suspended,
-              restartAttempt < 5,
-              restartTask == nil else { return }
-        let delay = min(30, 1 << restartAttempt)
-        restartAttempt += 1
-        restartTask = Task { [weak self] in
-            do {
-                try await Task.sleep(for: .seconds(delay))
-            } catch {
-                return
-            }
-            guard !Task.isCancelled else { return }
-            await self?.performScheduledRestart()
-        }
-    }
-
-    private func performScheduledRestart() async {
-        restartTask = nil
-        guard let configuration, !suspended else { return }
-        await reconcile(configuration: configuration, suspended: false)
-    }
-
-    private func publish() async {
-        snapshotRevision &+= 1
-        // This await is the lifecycle completion barrier: a coordinator
-        // command must not return before ModelMoorSession consumes its state.
-        // Wrapping the handler in an unstructured Task reintroduces stale
-        // snapshots after commands such as suspendRuntime().
-        await snapshotHandler(currentUpdate)
-    }
-}
-
-private extension CLIProxyRuntimeState {
-    var isRunning: Bool {
-        if case .running = self { return true }
-        return false
-    }
-
-    var isFailed: Bool {
-        if case .failed = self { return true }
-        return false
     }
 }
 
 extension ModelMoorSession {
     public func startSubscriptionLogin(
-        _ provider: CLIProxyLoginProvider
-    ) async throws -> CLIProxyLoginSession {
+        _ provider: SubscriptionProvider
+    ) async throws -> SubscriptionLoginSession {
         guard ownsRuntime() else {
             throw SessionError.runtimeOwnedElsewhere(owner: recordedRuntimeOwner())
         }
-        if !snapshot.configuration.cliProxy.enabled {
-            var candidate = snapshot.configuration
-            candidate.cliProxy.enabled = true
-            candidate.reconcileManagedCLIProxyEndpoint()
-            _ = try secretStore().ensureToken(for: candidate.cliProxy.endpointID)
-            _ = try secretStore().ensureCLIProxyManagementPassword()
-            try await saveConfiguration(candidate)
-        } else {
-            await reconcileManagedSubscriptions()
+        guard let nativeProvider = SubscriptionOAuthProvider(rawValue: provider.rawValue) else {
+            throw ManagedSubscriptionError.providerUnsupported(provider.rawValue)
         }
-        let coordinator = subscriptionCoordinator()
-        let login = try await coordinator.startLogin(provider)
+        let nativeLogin = try await subscriptionOAuthLoginCoordinator.start(nativeProvider)
+        let login = SubscriptionLoginSession(url: nativeLogin.url, state: nativeLogin.id.uuidString)
+        snapshot.subscriptions.activeProvider = provider
+        snapshot.subscriptions.activeLogin = login
+        snapshot.subscriptions.errorMessage = nil
+        emit()
+        subscriptionOAuthLoginTask?.cancel()
+        subscriptionOAuthLoginTask = Task { [weak self] in
+            await self?.pollNativeSubscriptionLogin(nativeLogin.id)
+        }
         return login
     }
 
     public func cancelSubscriptionLogin() async {
-        guard let coordinator = managedSubscriptionCoordinator else { return }
-        await coordinator.cancelLogin()
+        guard let nativeLogin = snapshot.subscriptions.activeLogin,
+              let loginID = UUID(uuidString: nativeLogin.state) else { return }
+        subscriptionOAuthLoginTask?.cancel()
+        subscriptionOAuthLoginTask = nil
+        await subscriptionOAuthLoginCoordinator.cancel(loginID)
+        snapshot.subscriptions.activeLogin = nil
+        snapshot.subscriptions.activeProvider = nil
+        emit()
     }
 
     public func refreshSubscriptionAccounts() async throws {
         guard ownsRuntime() else {
             throw SessionError.runtimeOwnedElsewhere(owner: recordedRuntimeOwner())
         }
-        guard snapshot.configuration.cliProxy.enabled else { return }
-        let coordinator = subscriptionCoordinator()
-        try await coordinator.refreshAccounts()
+        try await refreshNativeSubscriptionAccounts()
     }
 
     public func refreshSubscriptionState() async throws {
         try await refreshSubscriptionAccounts()
-        if snapshot.configuration.cliProxy.enabled {
-            await inspectEndpoint(snapshot.configuration.cliProxy.endpointID)
-        }
+        try await refreshNativeSubscriptionModels()
     }
 
-    public func refreshSubscriptionUsage() async {
-        guard ownsRuntime() else { return }
-        guard snapshot.configuration.cliProxy.enabled else { return }
-        let coordinator = subscriptionCoordinator()
-        await coordinator.refreshUsage()
-    }
-
-    public func removeSubscriptionAccount(_ account: CLIProxyAccount) async throws {
+    public func removeSubscriptionAccount(_ account: SubscriptionAccount) async throws {
         guard ownsRuntime() else {
             throw SessionError.runtimeOwnedElsewhere(owner: recordedRuntimeOwner())
         }
-        let coordinator = subscriptionCoordinator()
-        try await coordinator.removeAccount(account)
+        guard let accountID = UUID(uuidString: account.id),
+              try await subscriptionCredentialVault.accounts().contains(where: { $0.id == accountID }) else {
+            throw ManagedSubscriptionError.accountUnavailable
+        }
+        try await subscriptionCredentialVault.remove(accountID)
+        try await refreshNativeSubscriptionAccounts()
+        await reconcileGatewayAfterCredentialChange()
     }
 
     public func setSubscriptionAccountEnabled(
-        _ account: CLIProxyAccount,
+        _ account: SubscriptionAccount,
         enabled: Bool
     ) async throws {
         guard ownsRuntime() else {
             throw SessionError.runtimeOwnedElsewhere(owner: recordedRuntimeOwner())
         }
-        let coordinator = subscriptionCoordinator()
-        try await coordinator.setAccountEnabled(account, enabled: enabled)
+        guard let accountID = UUID(uuidString: account.id),
+              try await subscriptionCredentialVault.accounts().contains(where: { $0.id == accountID }) else {
+            throw ManagedSubscriptionError.accountUnavailable
+        }
+        try await subscriptionCredentialVault.setEnabled(enabled, for: accountID)
+        try await refreshNativeSubscriptionAccounts()
+        await reconcileGatewayAfterCredentialChange()
+    }
+
+    private func pollNativeSubscriptionLogin(_ loginID: UUID) async {
+        while !Task.isCancelled {
+            guard let login = await subscriptionOAuthLoginCoordinator.status(loginID) else { return }
+            switch login.state {
+            case .waiting:
+                try? await Task.sleep(for: .milliseconds(500))
+            case .completed:
+                do {
+                    try await refreshNativeSubscriptionAccounts()
+                    try await refreshNativeSubscriptionModels()
+                    await reconcileGatewayAfterCredentialChange()
+                    snapshot.subscriptions.errorMessage = nil
+                } catch {
+                    snapshot.subscriptions.errorMessage = error.localizedDescription
+                }
+                snapshot.subscriptions.activeLogin = nil
+                snapshot.subscriptions.activeProvider = nil
+                emit()
+                subscriptionOAuthLoginTask = nil
+                return
+            case let .failed(message):
+                snapshot.subscriptions.errorMessage = message
+                snapshot.subscriptions.activeLogin = nil
+                snapshot.subscriptions.activeProvider = nil
+                emit()
+                subscriptionOAuthLoginTask = nil
+                return
+            case .cancelled:
+                snapshot.subscriptions.activeLogin = nil
+                snapshot.subscriptions.activeProvider = nil
+                emit()
+                subscriptionOAuthLoginTask = nil
+                return
+            }
+        }
+    }
+
+    private func refreshNativeSubscriptionAccounts() async throws {
+        snapshot.subscriptions.accounts = try await subscriptionCredentialVault.accounts().map { account in
+            SubscriptionAccount(
+                id: account.id.uuidString,
+                name: account.user,
+                provider: account.provider.rawValue,
+                disabled: !account.enabled,
+                email: account.user,
+                accountType: account.plan
+            )
+        }
+        if !snapshot.subscriptions.accounts.isEmpty,
+           !snapshot.configuration.endpoints.contains(where: { $0.id == APIEndpointConfiguration.nativeSubscriptionEndpointID }) {
+            var candidate = snapshot.configuration
+            candidate.endpoints.append(.modelMoorSubscription())
+            try await saveConfiguration(candidate)
+        }
+        emit()
+    }
+
+    func refreshNativeSubscriptionModels() async throws {
+        let accounts = try await subscriptionCredentialVault.accounts().filter(\.enabled)
+        var discovered: [RemoteModelMetadata] = []
+        if let account = accounts.first(where: { $0.provider == .codex }) {
+            let credential = try await subscriptionCredentialVault.usableCredential(
+                for: account.id,
+                using: subscriptionOAuthClient
+            )
+            let codexModels = try await CodexSubscriptionAPIAdapter().models(using: credential)
+            discovered += codexModels.map { RemoteModelMetadata(id: $0.id, object: "model", ownedBy: "openai") }
+        }
+        if accounts.contains(where: { $0.provider == .claude }) {
+            discovered += ClaudeCodeSubscriptionAPIAdapter.models.map {
+                RemoteModelMetadata(id: $0.id, object: "model", ownedBy: "anthropic")
+            }
+        }
+        if accounts.contains(where: { $0.provider == .xai }) {
+            discovered += GrokBuildSubscriptionAPIAdapter.models.map {
+                RemoteModelMetadata(id: $0.id, object: "model", ownedBy: "xai")
+            }
+        }
+        if accounts.contains(where: { $0.provider == .kimi }) {
+            discovered += KimiCodeSubscriptionAPIAdapter.models.map {
+                RemoteModelMetadata(id: $0, object: "model", ownedBy: "moonshotai")
+            }
+        }
+        let endpointID = APIEndpointConfiguration.nativeSubscriptionEndpointID
+        snapshot.inspections[endpointID] = EndpointInspection(
+            endpointID: endpointID,
+            url: URL(string: "modelmoor://subscriptions/models")!,
+            checkedAt: Date(),
+            statusCode: accounts.isEmpty ? nil : 200,
+            contentType: "application/json",
+            models: discovered,
+            classification: .llmAPI
+        )
+        emit()
     }
 
     func reconcileManagedSubscriptions() async {
-        guard ownsRuntime() else {
-            if let coordinator = managedSubscriptionCoordinator {
-                managedSubscriptionCoordinatorID = nil
-                managedSubscriptionSnapshotRevision = 0
-                await coordinator.shutdown()
-                managedSubscriptionCoordinator = nil
-            }
-            let replacement = ManagedSubscriptionSnapshot(
-                isUsageProviderAvailable: subscriptionUsageProvider.isAvailable
-            )
-            if snapshot.subscriptions != replacement {
-                snapshot.subscriptions = replacement
-                emit()
-            }
-            return
-        }
-        let coordinator = subscriptionCoordinator()
-        await coordinator.reconcile(
-            configuration: snapshot.configuration.cliProxy,
-            suspended: isRuntimeSuspended()
-        )
-    }
-
-    private func subscriptionCoordinator() -> ManagedSubscriptionCoordinator {
-        if let managedSubscriptionCoordinator { return managedSubscriptionCoordinator }
-        let coordinator = ManagedSubscriptionCoordinator(
-            dataDirectoryURL: cliProxyDataDirectoryURL(),
-            secretStore: backgroundSecretStore(),
-            diagnostics: diagnosticLog(),
-            serviceFactory: cliProxyServiceFactory,
-            managementFactory: cliProxyManagementFactory,
-            usageProvider: subscriptionUsageProvider
-        ) { [weak self] update in
-            await self?.applyManagedSubscriptionUpdate(update)
-        }
-        managedSubscriptionCoordinator = coordinator
-        managedSubscriptionCoordinatorID = coordinator.id
-        managedSubscriptionSnapshotRevision = 0
-        return coordinator
-    }
-
-    private func applyManagedSubscriptionUpdate(
-        _ update: ManagedSubscriptionUpdate
-    ) async {
-        guard managedSubscriptionCoordinatorID == update.coordinatorID,
-              update.revision >= managedSubscriptionSnapshotRevision else { return }
-        managedSubscriptionSnapshotRevision = update.revision
-        let subscriptions = update.snapshot
-        let previous = snapshot.subscriptions
-        guard previous != subscriptions else { return }
-        snapshot.subscriptions = subscriptions
-        emit()
-
-        if previous.runtimeState != subscriptions.runtimeState
-            || previous.accounts != subscriptions.accounts {
-            if snapshot.configuration.cliProxy.enabled {
-                await inspectEndpoint(snapshot.configuration.cliProxy.endpointID)
-            }
-            await reconcileGatewayAfterCredentialChange()
-        }
+        try? await refreshNativeSubscriptionAccounts()
     }
 }

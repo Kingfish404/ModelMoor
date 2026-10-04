@@ -58,22 +58,21 @@ The app bundle declares a build profile in `Info.plist`. Both profiles use the s
 | Secrets file (macOS)     | `~/.config/modelmoor/secrets.json`         | `~/.config/modelmoor-dev/secrets.json`        |
 | Runtime and SSH controls | `/tmp/modelmoor-UID`                      | `/tmp/modelmoor-dev-UID`                      |
 | Unified API default      | `127.0.0.1:17777`                         | `127.0.0.1:27777`                             |
-| CLIProxyAPI default      | `127.0.0.1:18317`                         | `127.0.0.1:28317`                             |
 
 Development builds disable login launch and update checks. Both macOS profiles use private JSON secret files exclusively. Version 0.5.0 ignores historical Keychain credentials and migration metadata, without reading or deleting Keychain entries. Existing file credentials remain valid; keys stored only in Keychain must be entered again.
 
-`XDG_CONFIG_HOME` replaces `~/.config` when it is an absolute path. `MODELMOOR_CONFIG` overrides ordinary configuration only and disables automatic legacy configuration import. `MODELMOOR_SECRETS_FILE` independently overrides the secrets file; sharing that override also shares secrets across profiles. The Settings page lists the active configuration, retained legacy configuration, usage history, CLIProxyAPI data, app preferences, and secrets file with Finder open actions.
+`XDG_CONFIG_HOME` replaces `~/.config` when it is an absolute path. `MODELMOOR_CONFIG` overrides ordinary configuration only and disables automatic legacy configuration import. `MODELMOOR_SECRETS_FILE` independently overrides the secrets file; sharing that override also shares secrets across profiles. The Settings page lists the active configuration, retained legacy configuration, usage history, legacy subscription data, app preferences, and secrets file with Finder open actions.
 
 ## App Bundle Assembly
 
 `Scripts/build-app.sh` assembles the app bundle on top of `swift build -c release`:
 
 1. Copies the `ModelMoor` binary and `Support/Info.plist` into the bundle.
-2. Downloads the architecture-specific, checksum-pinned CLIProxyAPI release on first use and copies it into `Contents/MacOS`.
+2. Builds without downloading or bundling CLIProxyAPI; native Codex, Claude Code, Kimi Code and Grok Build subscription routing does not require the sidecar.
 3. Compiles `Resources/Assets.xcassets` with `actool` (app icon, minimum deployment target 14.0).
 4. Copies the English and Simplified Chinese app localizations into standard `en.lproj` and `zh-Hans.lproj` bundle resources.
-5. Copies SwiftNIO's privacy manifest and the SwiftNIO/CNIOLLHTTP/CLIProxyAPI license notices into the app resources.
-6. Signs the standalone CLI, CLIProxyAPI child executable, and complete app bundle ad-hoc by default. There is no automatic certificate lookup. Setting `MODELMOOR_CODE_SIGN_IDENTITY` explicitly opts into an alternative identity for the outer app.
+5. Copies SwiftNIO's privacy manifest, the SwiftNIO/CNIOLLHTTP license notices, and the Magpie attribution into the app resources.
+6. Signs the standalone CLI and complete app bundle ad-hoc by default. There is no automatic certificate lookup. Setting `MODELMOOR_CODE_SIGN_IDENTITY` explicitly opts into an alternative identity for the outer app.
 
 Runtime API credentials never access Keychain. Default local builds also require no Keychain access; an explicitly selected signing identity may use its private key during signing.
 
@@ -85,14 +84,14 @@ The build uses `--disable-sandbox`, the `native` SwiftPM backend, and a project-
 
 ```text
 Sources/
-  ModelMoorCore/     Pure domain: configuration schema v3, validation,
+  ModelMoorCore/     Pure domain: configuration schema v5, validation,
                      migration, cascade rules, diagnostics types, endpoint
                      routing data, tunnel status. Foundation only — no
                      Darwin/Glibc, Security, Network, AppKit or SwiftUI.
   ModelMoorSystem/   Platform adapters: POSIX file/lock IO, atomic writer,
                      OpenSSH command/process supervision, endpoint inspection
                      and release checks (URLSession), platform paths (XDG),
-                     secret stores, network monitor, CLIProxyAPI/CodexBar
+                     secret stores, network monitor, native subscription adapters
   ModelMoorGateway/  SwiftNIO loopback server, local authentication, exact model
                      routing, credential isolation, and streaming proxy
   ModelMoorApplication/  Single business entry point: ModelMoorSession actor,
@@ -119,7 +118,6 @@ Scripts/
   check-localization-coverage.sh  Verify compiler-extracted GUI key coverage
   test-cli-signal.py  Foreground runtime SIGTERM and cleanup contract
   test-tui-terminal.py  PTY, resize, signal and terminal-restoration contract
-  fetch-cliproxyapi.sh  Pinned CLIProxyAPI release download and checksum verification
 Support/
   Info.plist         App bundle Info.plist
 Resources/
@@ -130,7 +128,7 @@ Resources/
 
 `make architecture-check` enforces these import boundaries before the root tests. It prefers `rg` and falls back to POSIX `grep`, so the same check runs in the minimal Ubuntu CI containers without adding a search-tool dependency. Keep Darwin/Glibc shims, signal handling, platform paths, secrets and other operating-system behavior in `ModelMoorSystem`; TermKit is linked only by the root `ModelMoorTUI` target and sources under `Apps/TUI`.
 
-Business state changes only through `ModelMoorSession` commands (`load`, `saveConfiguration`, `removeTunnel/Endpoint/Mapping`, `startRuntime/stopRuntime`, `connectTunnel/disconnectTunnel`, credential and managed-subscription commands, temporary and saved endpoint inspection, coalesced SSH target discovery, current/historical usage reads, `refreshGateway`, `suspendRuntime/resumeRuntime`); presentation layers subscribe to secret-free `snapshots()`. Endpoint duplication and SSH Endpoint creation copy/store credentials transactionally with rollback, while explicit key-reveal commands return a value only to the invoking pasteboard action. Credential availability is projected as IDs only, so GUI rendering never synchronously calls Keychain and TUI can report missing keys without receiving secrets. The Session also owns CLIProxyAPI process lifecycle, management requests, login polling, bounded restart, account mutation and optional subscription-usage reads through injectable System protocols. GUI, `modelmoor run` and `modelmoor-tui` share one runtime owner lock (`RuntimeOwnership`, flock-based) — the loser stays read-only and subscription mutation controls are disabled rather than launching a second helper.
+Business state changes only through `ModelMoorSession` commands (`load`, `saveConfiguration`, `removeTunnel/Endpoint/Mapping`, `startRuntime/stopRuntime`, `connectTunnel/disconnectTunnel`, native credential and subscription commands, temporary and saved endpoint inspection, coalesced SSH target discovery, current/historical usage reads, `refreshGateway`, `suspendRuntime/resumeRuntime`); presentation layers subscribe to secret-free `snapshots()`. Endpoint duplication and SSH Endpoint creation copy/store credentials transactionally with rollback, while explicit key-reveal commands return a value only to the invoking pasteboard action. Credential availability is projected as IDs only, so GUI rendering never synchronously calls Keychain and TUI can report missing keys without receiving secrets. GUI, `modelmoor run` and `modelmoor-tui` share one runtime owner lock (`RuntimeOwnership`, flock-based); native subscription credentials remain ModelMoor-owned and no CLIProxyAPI process is started.
 
 Presentation-independent interaction policy also lives in `ModelMoorApplication`: GUI and TUI prepare the same terminal-safe, localized multi-field search query once per filtering pass, share SSH command eligibility for tunnel phase, desired runtime identity, and enabled mappings, and use the same endpoint URL/refresh/duplication eligibility. The macOS sidebar builds its tunnel/mapping/endpoint relationship index once per relevant source revision. The TUI likewise caches configuration ID indexes so selection-only input does not scan the complete configuration, and it resolves clipboard targets before moving blocking platform clipboard work off the UI queue.
 
@@ -195,7 +193,7 @@ python3 Scripts/test-cli-signal.py "$(swift build -c release --show-bin-path)/mo
 
 Tests cover schema migration and rollback, configuration validation, SSH lifecycle and ownership, endpoint URL/auth behavior, route validation, Unified API authentication and errors, ordinary JSON/error pass-through without retries, listener conflicts and release, client cancellation, upstream-reported usage extraction for JSON and SSE, indexed rolling windows, time buckets, route/endpoint filters, Session-owned managed-subscription lifecycle/login/cancellation/account mutation/usage/sleep recovery with fake helper and management adapters, ordered coordinator/revision filtering for cross-actor subscription snapshots, coalesced SSH target scans, temporary inspection isolation, ID-only credential availability, rollback-safe Endpoint duplication and SSH Endpoint creation, shared prepared search documents with field-boundary and control-character safety, linear macOS sidebar indexing with source/query cache invalidation, prepared-query performance, sidebar hidden-selection recovery without invalid controls, cached 10,000-row TUI filtering, filter/reorder/delete-safe TUI selection identity, phase/request/mapping-aware SSH and resolution/credential-aware endpoint TUI state, bounded trailing TUI refresh coalescing with reload-intent merging and cancellation, shared endpoint copy/refresh, subscription ownership and selected/batch SSH command eligibility across GUI and TUI surfaces, real AppKit window close behavior for dirty drafts, pre-mount and repeated native sidebar-search focus, keyboard navigation mappings, active-window refresh policy, authoritative String Catalog parity and compiler-extracted English/Simplified Chinese coverage, TUI snapshot and field-level invalidation, pane-scoped work policies, non-TTY success and failure exit contracts, small-terminal resize/signal/restoration, foreground CLI signal registration/cleanup, and a real loopback SSE stream that must deliver its first event before the upstream finishes.
 
-Set `MODELMOOR_CLIPROXY_BINARY` to the pinned helper path printed by `Scripts/fetch-cliproxyapi.sh` when running the optional real-process sidecar smoke test. That test starts CLIProxyAPI on a temporary loopback port, authenticates its management API, and shuts it down.
+`CLIProxyAPI` is not fetched, bundled, or started by ModelMoor. Older configuration is migrated with the helper disabled, and current configuration validation rejects re-enabling it. ModelMoor retains old helper data without reading or deleting it. Native Codex uses ModelMoor-managed OAuth; Claude Code, Kimi Code, and Grok Build use isolated temporary profiles and do not require the helper. Antigravity subscription login is unsupported.
 
 ## Software Updates
 
@@ -214,7 +212,7 @@ For testing or automation, set `MODELMOOR_CONFIG=/path/to/config.json` to point 
 
 When the selected XDG file does not exist, ModelMoor copies the matching legacy file from `~/Library/Application Support/ModelMoor*/config.json`, then performs schema migration only on the new copy. The legacy file is never moved, overwritten, or deleted. If the XDG file already exists, it always wins.
 
-Schema v3 keeps SSH port mappings, API endpoints, public model routes, Unified API settings, and managed CLIProxyAPI settings separate. Secrets are never serialized into ordinary configuration: endpoint keys use the endpoint UUID as their account in the separate secrets file. Unified API key metadata is stored in configuration, while each value uses its key UUID as a secret account. The default key retains the `gateway-client-token` account identifier in the secrets file; no Keychain migration occurs.
+Schema v5 keeps SSH port mappings, API endpoints, public model routes, and Unified API settings separate. Schema v5 migrates older managed CLIProxyAPI endpoints to native subscription endpoints and removes the helper settings. Secrets are never serialized into ordinary configuration: endpoint keys use the endpoint UUID as their account in the separate secrets file. Unified API key metadata is stored in configuration, while each value uses its key UUID as a secret account. The default key retains the `gateway-client-token` account identifier in the secrets file; no Keychain migration occurs.
 
 Unified API usage history lives at `~/Library/Application Support/ModelMoor/token-usage.jsonl`. Each line contains only a timestamp, a total token count reported by an upstream response, and internal route/endpoint identifiers used by the Usage filters. Set `MODELMOOR_USAGE=/path/to/token-usage.jsonl` to isolate this file in tests or automation.
 

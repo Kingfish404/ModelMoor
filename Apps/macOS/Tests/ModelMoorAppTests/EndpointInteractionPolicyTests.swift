@@ -96,8 +96,8 @@ final class EndpointInteractionPolicyTests: XCTestCase {
     func testSubscriptionControlsRespectGUIRuntimeOwnership() {
         var availability = ManagedSubscriptionInteractionPolicy.availability(
             runtimeState: .ownedExternally(owner: "modelmoor-tui"),
-            cliProxyState: .running(port: 18_317),
-            hasActiveLogin: false
+            hasActiveLogin: false,
+            hasAccounts: true
         )
         XCTAssertFalse(availability.canStartLogin)
         XCTAssertFalse(availability.canRefreshAccounts)
@@ -105,8 +105,8 @@ final class EndpointInteractionPolicyTests: XCTestCase {
 
         availability = ManagedSubscriptionInteractionPolicy.availability(
             runtimeState: .running,
-            cliProxyState: .running(port: 18_317),
-            hasActiveLogin: false
+            hasActiveLogin: false,
+            hasAccounts: true
         )
         XCTAssertTrue(availability.canStartLogin)
         XCTAssertTrue(availability.canRefreshAccounts)
