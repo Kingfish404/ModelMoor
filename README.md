@@ -266,7 +266,7 @@ Direct API endpoints accept both HTTP and HTTPS, including custom ports and base
 - The Unified API binds only `127.0.0.1`. Bearer authentication is enabled by default, supports multiple independently enabled keys, and can be turned off with an in-app warning. Newly created and rotated keys use the familiar `sk-` prefix. Keys are stored only in the private secrets file. Client credentials are removed before ModelMoor injects only the selected endpoint credential.
 - API inspection only performs GET probes. The Gateway never logs request or response bodies and never retries or falls back to another paid endpoint.
 - Usage history stores only a timestamp, total token count, and internal route/endpoint identifiers. It is based on upstream `usage` fields, so a streaming response is counted only when the upstream includes usage data.
-- Gateway requests are limited to 16 MiB and 64 active requests; file, image/audio upload, CORS, and native Anthropic/Gemini protocol translation are intentionally out of scope.
+- Gateway requests are limited to 16 MiB, with no application-level cap on active requests; file, image/audio upload, CORS, and native Anthropic/Gemini protocol translation are intentionally out of scope.
 - Subscription routing depends on each provider's current subscription terms. Native routing currently covers Codex Responses and text-only Claude Code, Kimi Code, and Grok Build chat through their official CLIs. Google Antigravity subscription login is unsupported. Legacy CLIProxyAPI configuration is migrated off and cannot be enabled; old helper files are retained untouched. Consumer subscriptions do not become official metered API entitlements; users remain responsible for provider terms, quotas, and account policy.
 
 ## Documentation
