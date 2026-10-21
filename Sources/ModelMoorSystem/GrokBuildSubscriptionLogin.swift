@@ -47,11 +47,13 @@ public actor GrokBuildSubscriptionLoginCoordinator {
         let (urlStream, continuation) = AsyncThrowingStream<URL, Error>.makeStream()
         flows[id] = ActiveFlow(login: login, rootURL: root, runner: runner, urlContinuation: continuation)
         let coordinator = self
-        Task.detached(priority: .userInitiated) {
+        // Pipe reads and process completion block; keep them off Swift's
+        // cooperative executor while the device login waits for user input.
+        DispatchQueue.global(qos: .userInitiated).async {
             let result = runner.waitForExit { url in
                 Task { await coordinator.publishURL(url, for: id) }
             }
-            await coordinator.finish(id, result: result)
+            Task { await coordinator.finish(id, result: result) }
         }
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(30))
@@ -180,6 +182,7 @@ public actor GrokBuildSubscriptionLoginCoordinator {
 
 private final class GrokBuildLoginProcessRunner: @unchecked Sendable {
     private let lock = NSLock()
+    private let exited = DispatchSemaphore(value: 0)
     private var process: Process?
     private var output: Pipe?
     private var rootURL: URL?
@@ -194,6 +197,10 @@ private final class GrokBuildLoginProcessRunner: @unchecked Sendable {
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = pipe
         process.standardError = pipe
+        // Register before launch so an immediate exit cannot be missed.
+        // waitUntilExit() can stall in a run loop on a different thread from
+        // the one that launched the process on macOS.
+        process.terminationHandler = { [exited] _ in exited.signal() }
         var environment = [
             "HOME": rootURL.path,
             "GROK_HOME": grokHomeURL.path,
@@ -241,7 +248,7 @@ private final class GrokBuildLoginProcessRunner: @unchecked Sendable {
             }
             if buffered.count > 16_384 { buffered = String(buffered.suffix(4_096)) }
         }
-        process.waitUntilExit()
+        exited.wait()
         if lock.withLock({ stopped }) { return .failure(GrokBuildSubscriptionError.cancelled) }
         guard process.terminationStatus == 0 else {
             return .failure(GrokBuildSubscriptionError.processFailed(process.terminationStatus))

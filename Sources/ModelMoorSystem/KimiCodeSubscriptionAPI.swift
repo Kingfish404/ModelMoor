@@ -317,9 +317,10 @@ public actor KimiCodeSubscriptionLoginCoordinator {
         let (stream, continuation) = AsyncThrowingStream<URL, Error>.makeStream()
         flows[id] = Flow(login: login, root: root, runner: runner, urlContinuation: continuation)
         let coordinator = self
-        Task.detached(priority: .userInitiated) {
+        // The CLI pipe and exit wait must not occupy a cooperative thread.
+        DispatchQueue.global(qos: .userInitiated).async {
             let result = runner.waitForExit { url in Task { await coordinator.publish(url, id: id) } }
-            await coordinator.finish(id, result: result)
+            Task { await coordinator.finish(id, result: result) }
         }
         Task { [weak self] in try? await Task.sleep(for: .seconds(30)); await self?.failIfNoURL(id) }
         Task { [weak self] in try? await Task.sleep(for: .seconds(600)); await self?.expire(id) }
@@ -375,11 +376,15 @@ public actor KimiCodeSubscriptionLoginCoordinator {
 
 private final class KimiLoginProcessRunner: @unchecked Sendable {
     private let lock = NSLock(); private var process: Process?; private var pipe: Pipe?; private var dataHome: URL?; private var stopped = false
+    private let exited = DispatchSemaphore(value: 0)
     func start(executableURL: URL, root: URL, home: URL, dataHome: URL) throws {
         let pipe = Pipe(), process = Process()
         process.executableURL = executableURL; process.arguments = ["login", "--region", "global"]
         process.currentDirectoryURL = root; process.standardInput = FileHandle.nullDevice
         process.standardOutput = pipe; process.standardError = pipe
+        // Observe exit before launch rather than pumping a run loop on the
+        // reader thread with waitUntilExit(), which can stall on macOS.
+        process.terminationHandler = { [exited] _ in exited.signal() }
         var env = ["HOME": home.path, "KIMI_CODE_HOME": dataHome.path, "KIMI_DISABLE_TELEMETRY": "1", "TMPDIR": root.path, "TERM": "dumb"]
         let inherited = ProcessInfo.processInfo.environment
         for key in ["PATH", "LANG", "LC_ALL", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY"] { if let value = inherited[key] { env[key] = value } }
@@ -398,7 +403,7 @@ private final class KimiLoginProcessRunner: @unchecked Sendable {
             if !sentURL, let url = Self.findURL(in: buffered) { sentURL = true; onURL(url) }
             if buffered.count > 16_000 { buffered = String(buffered.suffix(4_000)) }
         }
-        process.waitUntilExit()
+        exited.wait()
         if lock.withLock({ stopped }) { return .failure(KimiCodeSubscriptionError.cancelled) }
         guard process.terminationStatus == 0 else { return .failure(KimiCodeSubscriptionError.processFailed(Int(process.terminationStatus))) }
         do { return .success(try KimiCodeSubscriptionProfile.read(from: dataHome)) } catch { return .failure(error) }

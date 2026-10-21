@@ -64,15 +64,7 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(login.url.path, "/device")
         XCTAssertEqual(login.provider, .xai)
 
-        var completed: SubscriptionOAuthLogin?
-        for _ in 0..<80 {
-            if let status = await coordinator.status(login.id), status.state != .waiting {
-                completed = status
-                break
-            }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        let result = try XCTUnwrap(completed)
+        let result = try await waitForSubscriptionLogin(login, coordinator: coordinator)
         guard case let .completed(account) = result.state else {
             return XCTFail("Expected the isolated CLI login to finish, got \(result.state)")
         }
@@ -107,18 +99,43 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(login.provider, .kimi)
         XCTAssertEqual(login.url.host, "www.kimi.com")
 
-        var completed: SubscriptionOAuthLogin?
-        for _ in 0..<80 {
-            if let status = await coordinator.status(login.id), status.state != .waiting { completed = status; break }
-            try await Task.sleep(for: .milliseconds(50))
-        }
-        let result = try XCTUnwrap(completed)
+        let result = try await waitForSubscriptionLogin(login, coordinator: coordinator)
         guard case let .completed(account) = result.state else { return XCTFail("Expected isolated Kimi login to complete: \(result.state)") }
         XCTAssertEqual(account.provider, .kimi)
         XCTAssertEqual(account.user, "person@example.com")
         let stored = try await vault.credential(for: account.id)
         let profile = try XCTUnwrap(KimiCodeSubscriptionProfile(storedOAuthCredential: stored))
         XCTAssertTrue(profile.credentialFiles["kimi-code.json"]?.contains(Data("kimi-token".utf8)) == true)
+    }
+
+    private func waitForSubscriptionLogin(
+        _ login: SubscriptionOAuthLogin,
+        coordinator: SubscriptionOAuthLoginCoordinator,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async throws -> SubscriptionOAuthLogin {
+        // Allow subprocess scheduling headroom, but preserve a bounded wait
+        // and the last state so process-exit regressions have a useful failure.
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(15))
+        var lastStatus: SubscriptionOAuthLogin? = login
+        do {
+            while clock.now < deadline {
+                lastStatus = await coordinator.status(login.id)
+                if let status = lastStatus, status.state != .waiting { return status }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        } catch {
+            await coordinator.cancel(login.id)
+            throw error
+        }
+        await coordinator.cancel(login.id)
+        return try XCTUnwrap(
+            nil as SubscriptionOAuthLogin?,
+            "\(login.provider) device login did not finish within 15 seconds; last state: \(String(describing: lastStatus?.state))",
+            file: file,
+            line: line
+        )
     }
 
     func testNativeSubscriptionEndpointHasNoSidecarOriginOrAPIKey() throws {
