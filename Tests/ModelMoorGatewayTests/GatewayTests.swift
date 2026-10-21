@@ -388,23 +388,57 @@ final class GatewayTests: XCTestCase {
         }
     }
 
-    func testConcurrencyLimitRejectsRatherThanQueuesAnAdditionalRequest() async throws {
-        let upstream = try LoopbackCancellationFixture()
-        let configured = gatewayFixture(gatewayPort: 17_777, upstreamPort: upstream.port)
-        let service = ephemeralGatewayService(maximumActiveRequests: 1)
-        try await service.start(snapshot: configured.snapshot)
-        let gatewayPort = try XCTUnwrap(service.state.runningPort)
+    func testGatewayAllowsMoreThan64ActiveRequests() async throws {
+        var upstreams: [LoopbackCancellationFixture] = []
+        var clients: [Int32] = []
+        defer {
+            for client in clients {
+                _ = shutdown(client, Int32(SHUT_RDWR))
+                close(client)
+            }
+            for upstream in upstreams { upstream.finish() }
+        }
 
-        let first = Task { try await URLSession.shared.data(for: gatewayURLRequest(port: gatewayPort)) }
-        XCTAssertTrue(upstream.waitUntilStreaming(seconds: 1))
-        let (body, response) = try await URLSession.shared.data(for: gatewayURLRequest(port: gatewayPort))
-        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 503)
-        XCTAssertTrue(String(decoding: body, as: UTF8.self).contains("gateway_busy"))
-
-        first.cancel()
+        var configuration = ModelMoorConfiguration(
+            gateway: GatewayConfiguration(enabled: true, listenPort: 17_777)
+        )
+        var secrets: [UUID: String] = [:]
+        // Separate origins keep URLSession's per-host connection pool out of
+        // this test of the gateway-wide request limit. Every stream stays open
+        // until cleanup, so the 65th request really overlaps the preceding 64.
+        for index in 0..<65 {
+            let upstream = try LoopbackCancellationFixture(holdUntilFinished: true)
+            upstreams.append(upstream)
+            var snapshot = gatewayFixture(gatewayPort: 17_777, upstreamPort: upstream.port).snapshot
+            snapshot.configuration.tunnels[0].name = "Remote \(index)"
+            snapshot.configuration.endpoints[0].name = "Remote API \(index)"
+            snapshot.configuration.routes[0].publicModel = "model-\(index)"
+            configuration.tunnels += snapshot.configuration.tunnels
+            configuration.endpoints += snapshot.configuration.endpoints
+            configuration.routes += snapshot.configuration.routes
+            secrets.merge(snapshot.endpointSecrets) { _, new in new }
+        }
+        let service = ephemeralGatewayService()
+        try await service.start(snapshot: GatewaySnapshot(
+            configuration: configuration,
+            gatewayToken: "local-token",
+            endpointSecrets: secrets,
+            availableMappingIDs: Set(configuration.tunnels.flatMap { $0.mappings.map(\.id) })
+        ))
+        do {
+            let gatewayPort = try XCTUnwrap(service.state.runningPort)
+            for index in 0..<65 {
+                clients.append(try openGatewayStream(port: gatewayPort, model: "model-\(index)"))
+            }
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(gatewayPort)/v1/models")!)
+            request.setValue("Bearer local-token", forHTTPHeaderField: "Authorization")
+            let (_, response) = try await URLSession.shared.data(for: request)
+            XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        } catch {
+            await service.stop()
+            throw error
+        }
         await service.stop()
-        upstream.finish()
-        _ = await first.result
     }
 
     func testModelsAreStableAndUsePublicAliases() throws {
@@ -892,12 +926,10 @@ final class GatewayTests: XCTestCase {
     }
 
     private func ephemeralGatewayService(
-        maximumActiveRequests: Int = 64,
         usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil,
         upstreamCancellationObserver: (@Sendable () -> Void)? = nil
     ) -> GatewayService {
         GatewayService(
-            maximumActiveRequests: maximumActiveRequests,
             usageHandler: usageHandler,
             upstreamCancellationObserver: upstreamCancellationObserver,
             bindingPortOverride: 0
@@ -979,9 +1011,10 @@ private final class LoopbackCancellationFixture: @unchecked Sendable {
     let port: Int
     private let listener: Int32
     private let finished = DispatchSemaphore(value: 0)
-    private let streaming = TestSignal()
+    private let holdUntilFinished: Bool
 
-    init() throws {
+    init(holdUntilFinished: Bool = false) throws {
+        self.holdUntilFinished = holdUntilFinished
         let listening = try makeLoopbackListener()
         listener = listening.descriptor
         port = listening.port
@@ -994,17 +1027,17 @@ private final class LoopbackCancellationFixture: @unchecked Sendable {
     }
 
     func finish() { finished.signal() }
-    func waitUntilStreaming(seconds: Double) -> Bool { streaming.wait(seconds: seconds) }
 
     private func start() {
-        DispatchQueue.global(qos: .userInitiated).async { [self] in
+        // These blocking fixtures must not exhaust the shared dispatch pool
+        // when the concurrency regression holds more than 64 streams open.
+        Thread.detachNewThread { [self] in
             let client = accept(listener, nil, nil)
             guard client >= 0 else { return }
             defer { close(client) }
             _ = receiveHTTPRequest(client)
             sendAll(client, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\ndata: ready\n\n")
-            streaming.signal()
-            _ = finished.wait(timeout: .now() + 5)
+            _ = finished.wait(timeout: holdUntilFinished ? .distantFuture : .now() + 5)
         }
     }
 }
@@ -1138,12 +1171,20 @@ private func makeLoopbackListener() throws -> (descriptor: Int32, port: Int) {
 }
 
 private func sendGatewayRequestAndDisconnectAfterFirstEvent(port: Int) throws {
+    let descriptor = try openGatewayStream(port: port)
+    _ = shutdown(descriptor, Int32(SHUT_RDWR))
+    close(descriptor)
+}
+
+private func openGatewayStream(port: Int, model: String = "public-model") throws -> Int32 {
     let descriptor = modelMoorTCPSocket()
     guard descriptor >= 0 else { throw POSIXError(.EIO) }
+    var opened = false
     defer {
-        _ = shutdown(descriptor, Int32(SHUT_RDWR))
-        close(descriptor)
+        if !opened { close(descriptor) }
     }
+    var timeout = timeval(tv_sec: 5, tv_usec: 0)
+    setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
     var address = sockaddr_in()
     #if canImport(Darwin)
             address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
@@ -1157,7 +1198,7 @@ private func sendGatewayRequestAndDisconnectAfterFirstEvent(port: Int) throws {
         }
     }
     guard connected == 0 else { throw POSIXError(.ECONNREFUSED) }
-    let body = #"{"model":"public-model","stream":true,"messages":[]}"#
+    let body = "{\"model\":\"\(model)\",\"stream\":true,\"messages\":[]}"
     sendAll(descriptor, "POST /v1/chat/completions HTTP/1.1\r\nHost: 127.0.0.1:\(port)\r\nAuthorization: Bearer local-token\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)")
     var data = Data()
     var buffer = [UInt8](repeating: 0, count: 4_096)
@@ -1165,18 +1206,12 @@ private func sendGatewayRequestAndDisconnectAfterFirstEvent(port: Int) throws {
         let count = recv(descriptor, &buffer, buffer.count, 0)
         guard count > 0 else { throw POSIXError(.ECONNRESET) }
         data.append(contentsOf: buffer.prefix(count))
-        if String(decoding: data, as: UTF8.self).contains("data: ready\n\n") { return }
+        if String(decoding: data, as: UTF8.self).contains("data: ready\n\n") {
+            opened = true
+            return descriptor
+        }
     }
     throw POSIXError(.EMSGSIZE)
-}
-
-private func gatewayURLRequest(port: Int) -> URLRequest {
-    var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/v1/chat/completions")!)
-    request.httpMethod = "POST"
-    request.httpBody = Data(#"{"model":"public-model","stream":true,"messages":[]}"#.utf8)
-    request.setValue("Bearer local-token", forHTTPHeaderField: "Authorization")
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    return request
 }
 
 private func sendRawStreamingGatewayRequest(port: Int) throws -> String {

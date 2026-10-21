@@ -16,7 +16,6 @@ public enum GatewayServiceState: Equatable, Sendable {
 
 public final class GatewayService: @unchecked Sendable {
     private let group: MultiThreadedEventLoopGroup
-    private let limiter: GatewayRequestLimiter
     private let usageHandler: (@Sendable (GatewayTokenUsage) -> Void)?
     private let upstreamCancellationObserver: (@Sendable () -> Void)?
     private let bindingPortOverride: Int?
@@ -27,11 +26,9 @@ public final class GatewayService: @unchecked Sendable {
     private var currentState: GatewayServiceState = .stopped
 
     public convenience init(
-        maximumActiveRequests: Int = 64,
         usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil
     ) {
         self.init(
-            maximumActiveRequests: maximumActiveRequests,
             usageHandler: usageHandler,
             upstreamCancellationObserver: nil,
             bindingPortOverride: nil
@@ -39,13 +36,11 @@ public final class GatewayService: @unchecked Sendable {
     }
 
     init(
-        maximumActiveRequests: Int = 64,
         usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil,
         upstreamCancellationObserver: (@Sendable () -> Void)?,
         bindingPortOverride: Int? = nil
     ) {
         group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
-        limiter = GatewayRequestLimiter(limit: maximumActiveRequests)
         self.usageHandler = usageHandler
         self.upstreamCancellationObserver = upstreamCancellationObserver
         self.bindingPortOverride = bindingPortOverride
@@ -72,7 +67,6 @@ public final class GatewayService: @unchecked Sendable {
         if serverChannel != nil { await stop() }
 
         let router = GatewayRequestRouter(snapshot: snapshot, budgetLedger: budgetLedger)
-        let limiter = self.limiter
         let connections = self.connections
         let usageHandler = self.usageHandler
         let upstreamCancellationObserver = self.upstreamCancellationObserver
@@ -89,7 +83,6 @@ public final class GatewayService: @unchecked Sendable {
                 ).flatMap {
                     channel.pipeline.addHandler(GatewayHTTPHandler(
                         router: router,
-                        limiter: limiter,
                         usageHandler: usageHandler,
                         upstreamCancellationObserver: upstreamCancellationObserver
                     ))
@@ -181,15 +174,11 @@ public actor GatewayServiceCoordinator {
     private var waiters: [CheckedContinuation<GatewayServiceState, Never>] = []
 
     public init(
-        maximumActiveRequests: Int = 64,
         budgetLedger: GatewayBudgetLedger = GatewayBudgetLedger(),
         usageHandler: (@Sendable (GatewayTokenUsage) -> Void)? = nil
     ) {
         serviceFactory = {
-            let service = GatewayService(
-                maximumActiveRequests: maximumActiveRequests,
-                usageHandler: usageHandler
-            )
+            let service = GatewayService(usageHandler: usageHandler)
             service.useBudgetLedger(budgetLedger)
             return service
         }
@@ -297,29 +286,11 @@ public enum GatewayServiceError: LocalizedError, Equatable {
     }
 }
 
-private actor GatewayRequestLimiter {
-    let limit: Int
-    private var active = 0
-
-    init(limit: Int) { self.limit = limit }
-
-    func acquire() -> Bool {
-        guard active < limit else { return false }
-        active += 1
-        return true
-    }
-
-    func release() {
-        active = max(0, active - 1)
-    }
-}
-
 private final class GatewayHTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
     private let router: GatewayRequestRouter
-    private let limiter: GatewayRequestLimiter
     private let usageHandler: (@Sendable (GatewayTokenUsage) -> Void)?
     private let upstreamCancellationObserver: (@Sendable () -> Void)?
     private var requestHead: HTTPRequestHead?
@@ -329,12 +300,10 @@ private final class GatewayHTTPHandler: ChannelInboundHandler, @unchecked Sendab
 
     init(
         router: GatewayRequestRouter,
-        limiter: GatewayRequestLimiter,
         usageHandler: (@Sendable (GatewayTokenUsage) -> Void)?,
         upstreamCancellationObserver: (@Sendable () -> Void)?
     ) {
         self.router = router
-        self.limiter = limiter
         self.usageHandler = usageHandler
         self.upstreamCancellationObserver = upstreamCancellationObserver
     }
@@ -381,21 +350,13 @@ private final class GatewayHTTPHandler: ChannelInboundHandler, @unchecked Sendab
                 usageHandler: usageHandler,
                 upstreamCancellationObserver: upstreamCancellationObserver
             )
-            responseTask = Task { [router, limiter] in
-                guard await limiter.acquire() else {
-                    await writer.writeLocal(GatewayLocalResponse(
-                        status: 503,
-                        body: Self.errorBody(code: "gateway_busy", message: "Gateway has reached its 64-request concurrency limit.")
-                    ))
-                    return
-                }
+            responseTask = Task { [router] in
                 switch router.route(request) {
                 case let .local(response):
                     await writer.writeLocal(response)
                 case let .upstream(prepared):
                     await writer.proxy(prepared)
                 }
-                await limiter.release()
             }
         }
     }
