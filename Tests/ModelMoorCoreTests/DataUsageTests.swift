@@ -1,10 +1,85 @@
 import Foundation
+import ModelMoorCore
 import XCTest
 import NIOCore
 import NIOPosix
 @testable import ModelMoorSystem
 
 final class DataUsageTests: XCTestCase {
+    func testStoppingRelayClosesActiveConnectionAndReleasesPort() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let accepted = group.next().makePromise(of: Channel.self)
+        let server = try await ServerBootstrap(group: group)
+            .childChannelInitializer { channel in
+                accepted.succeed(channel)
+                return channel.eventLoop.makeSucceededVoidFuture()
+            }
+            .bind(host: "127.0.0.1", port: 0).get()
+        let relay = ForwardTrafficRelay()
+        try await relay.start(port: 0, destinationHost: "127.0.0.1", destinationPort: XCTUnwrap(server.localAddress?.port), inboundIsSent: true)
+        let port = relay.port
+        let client = try await ClientBootstrap(group: group)
+            .connectTimeout(.seconds(5))
+            .connect(host: "127.0.0.1", port: port).get()
+        let connection = try await accepted.futureResult.get()
+        let timeout = client.eventLoop.scheduleTask(in: .seconds(5)) {
+            XCTFail("Stopping the relay did not close both sides")
+            client.close(promise: nil)
+            connection.close(promise: nil)
+        }
+        await relay.stop()
+        try await client.closeFuture.get()
+        try await connection.closeFuture.get()
+        timeout.cancel()
+        let tunnel = TunnelConfiguration(
+            name: "Restart", sshHost: "unused.example",
+            mappings: [PortMappingConfiguration(listenPort: port)]
+        )
+        XCTAssertNoThrow(try TunnelService.systemLocalPortPreflight(for: tunnel))
+        let replacement = ForwardTrafficRelay()
+        try await replacement.start(port: port, destinationHost: "127.0.0.1", destinationPort: 1, inboundIsSent: true)
+        await replacement.stop()
+        try await server.close().get()
+        try await group.shutdownGracefully()
+    }
+
+    func testLocalPortPreflightAllowsReuseAfterConnectionCloses() async throws {
+        let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        let accepted = group.next().makePromise(of: Channel.self)
+        let server = try await ServerBootstrap(group: group)
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .childChannelInitializer { channel in
+                accepted.succeed(channel)
+                return channel.eventLoop.makeSucceededVoidFuture()
+            }
+            .bind(host: "127.0.0.1", port: 0).get()
+        let port = try XCTUnwrap(server.localAddress?.port)
+        let tunnel = TunnelConfiguration(
+            name: "Restart", sshHost: "unused.example",
+            mappings: [PortMappingConfiguration(listenPort: port)]
+        )
+        XCTAssertThrowsError(try TunnelService.systemLocalPortPreflight(for: tunnel)) { error in
+            XCTAssertEqual((error as? TunnelPreflightFailure)?.category, .localPortInUse)
+        }
+        let client = try await ClientBootstrap(group: group)
+            .connectTimeout(.seconds(5))
+            .connect(host: "127.0.0.1", port: port).get()
+        let connection = try await accepted.futureResult.get()
+        let timeout = client.eventLoop.scheduleTask(in: .seconds(5)) {
+            XCTFail("Peer did not observe the server closing the connection")
+            client.close(promise: nil)
+        }
+        try await connection.close().get()
+        try await client.closeFuture.get()
+        timeout.cancel()
+        try await server.close().get()
+        XCTAssertNoThrow(try TunnelService.systemLocalPortPreflight(for: tunnel))
+        let replacement = ForwardTrafficRelay()
+        try await replacement.start(port: port, destinationHost: "127.0.0.1", destinationPort: 1, inboundIsSent: true)
+        await replacement.stop()
+        try await group.shutdownGracefully()
+    }
+
     func testHistorySeparatesPathsDirectionsAndTimeBucketsAcrossReload() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

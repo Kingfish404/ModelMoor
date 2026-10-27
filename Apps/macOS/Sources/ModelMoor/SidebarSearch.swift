@@ -3,6 +3,17 @@ import ModelMoorApplication
 import ModelMoorCore
 import ModelMoorSystem
 
+enum SidebarInspectionSearchChanges {
+    static func containsChanges(from previous: [UUID: EndpointInspection], to current: [UUID: EndpointInspection]) -> Bool {
+        guard previous.count == current.count else { return true }
+        return current.contains { endpointID, inspection in
+            guard let old = previous[endpointID] else { return true }
+            return old.classification != inspection.classification
+                || (old.models ?? []).map(\.id) != (inspection.models ?? []).map(\.id)
+        }
+    }
+}
+
 struct SidebarEndpointCounts: Equatable {
     var llm = 0
     var other = 0

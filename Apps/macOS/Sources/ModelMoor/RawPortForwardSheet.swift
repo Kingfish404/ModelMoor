@@ -251,10 +251,7 @@ private struct PortForwardFields: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("Command preview").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                Text(verbatim: "ssh \(mapping.direction.sshFlag) \(mapping.forwardingSpecification) \(sshHost.isEmpty ? "<ssh-alias>" : sshHost)")
-                    .font(.callout.monospaced())
-                    .textSelection(.enabled)
-                    .lineLimit(2)
+                CopyableText(value: SSHCommandPresentation.forwardPreview(mapping, host: sshHost))
                 Text("The listener stays on loopback, so the forwarded port is not exposed to the LAN.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

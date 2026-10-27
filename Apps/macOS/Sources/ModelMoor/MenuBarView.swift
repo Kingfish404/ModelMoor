@@ -65,9 +65,10 @@ struct MenuBarView: View {
                 Task { await model.copyGatewayToken() }
             }
             .disabled(model.isUpdatingGatewayAccess)
-            if !model.configuration.routes.isEmpty {
-                Menu(model.configuration.routes.count == 1 ? "Models, 1" : "Models, \(model.configuration.routes.count)") {
-                    ForEach(model.configuration.routes.filter(\.enabled)) { route in
+            let enabledRoutes = model.configuration.routes.filter(\.enabled)
+            if !enabledRoutes.isEmpty {
+                Menu(enabledRoutes.count == 1 ? "Models, 1" : "Models, \(enabledRoutes.count)") {
+                    ForEach(enabledRoutes) { route in
                         Button(route.publicModel) { model.copy(route.publicModel) }
                     }
                 }
@@ -86,10 +87,6 @@ struct MenuBarView: View {
         Menu {
             if llmEndpoints.isEmpty {
                 Text("No API Endpoints").disabled(true)
-                Button("Add API Endpoint…") {
-                    lifecycle.showMainWindow()
-                    model.requestAddEndpoint()
-                }
             } else {
                 ForEach(llmEndpoints) { endpoint in
                     Menu {
@@ -123,6 +120,15 @@ struct MenuBarView: View {
                         Text(endpoint.name)
                     }
                 }
+            }
+            Divider()
+            Button("Add API Endpoint…") {
+                lifecycle.showMainWindow()
+                model.requestAddEndpoint()
+            }
+            Button("Connect Subscription") {
+                model.showSubscriptionAccounts()
+                lifecycle.showMainWindow()
             }
         } label: {
             Text("API Endpoints")
@@ -226,7 +232,7 @@ struct MenuBarView: View {
 
     private var attentionItems: [(id: UUID, name: String, message: String)] {
         llmEndpoints.compactMap { endpoint in
-            guard let message = model.inspections[endpoint.id]?.errorMessage else { return nil }
+            guard case let .needsAttention(message) = model.endpointReadiness(endpoint) else { return nil }
             return (endpoint.id, endpoint.name, message)
         }
     }
@@ -243,10 +249,16 @@ struct MenuBarView: View {
     private var overallStatus: String {
         if attentionCount > 0 { return AppLocalization.string("Needs Attention") }
         if model.configuration.gateway.enabled {
-            if case .running = model.gatewayState { return AppLocalization.string("Ready") }
-            return AppLocalization.string("Starting")
+            switch model.gatewayState {
+            case .running: return AppLocalization.string("Ready")
+            case .failed: return AppLocalization.string("Needs Attention")
+            case .stopped: return AppLocalization.string("Stopped")
+            }
         }
-        let ready = llmEndpoints.filter { model.inspections[$0.id]?.errorMessage == nil && model.inspections[$0.id]?.statusCode != nil }.count
+        let ready = llmEndpoints.filter {
+            if case .ready = model.endpointReadiness($0) { return true }
+            return false
+        }.count
         return AppLocalization.string(ready > 0 ? "Ready" : "Idle")
     }
 
@@ -260,7 +272,7 @@ struct MenuBarView: View {
 
     private var gatewayStatus: String {
         switch model.gatewayState {
-        case .stopped: AppLocalization.string("Starting")
+        case .stopped: AppLocalization.string("Stopped")
         case let .running(port): AppLocalization.format(
             "Ready, 127.0.0.1:%lld, %lld models",
             Int64(port),
@@ -271,12 +283,7 @@ struct MenuBarView: View {
     }
 
     private func endpointStatus(_ endpoint: APIEndpointConfiguration) -> String {
-        if !endpoint.enabled { return AppLocalization.string("Disabled") }
-        if model.inspectingEndpointIDs.contains(endpoint.id) { return AppLocalization.string("Checking") }
-        guard let inspection = model.inspections[endpoint.id] else { return AppLocalization.string("Not checked") }
-        let count = inspection.models?.count ?? 0
-        return inspection.errorMessage
-            ?? AppLocalization.format(count == 1 ? "Ready, %lld model" : "Ready, %lld models", Int64(count))
+        model.endpointReadiness(endpoint).title
     }
 
     private func compact(_ value: String, limit: Int = 72) -> String {

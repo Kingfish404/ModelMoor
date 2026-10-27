@@ -83,6 +83,9 @@ The Mac must keep ModelMoor and the SSH connection running. Both listeners remai
 - Routes Codex Responses natively and text-only Claude, Kimi Code and Grok chat through their genuine provider CLIs
 - Discovers OpenAI-compatible and Ollama models and reports endpoint health independently from SSH state
 - Searches SSH connections, endpoints, forwarded services, and discovered model IDs directly from the macOS sidebar
+- Offers direct connection presets for DeepSeek, OpenAI-compatible APIs, OpenRouter, LM Studio, and Ollama, preserving custom URLs when switching presets
+- Searches discovered and unified models, selects filtered results in bulk, and keeps selections while refreshing model discovery
+- Generates copyable client environment and streaming request examples using the configured port and public model alias, including Responses requests for native Codex subscriptions
 - Localizes critical macOS navigation, commands, status, settings, and update flows in English and Simplified Chinese
 - Routes stable public model aliases to exact upstream models without fallback, load balancing, or inference retries
 - Serves a loopback-only `/v1/models`, with optional multi-key bearer authentication, and streams OpenAI-compatible responses, including SSE
@@ -93,13 +96,15 @@ The Mac must keep ModelMoor and the SSH connection running. Both listeners remai
 
 Open the ModelMoor main window and:
 
-1. Add a DeepSeek preset or another HTTPS OpenAI-compatible endpoint and save its API key.
-2. Create a route, for example `deepseek-fast` -> `deepseek-v4-flash`.
-3. Create a Mooring for each SSH remote and route any discovered remote models the same way.
-4. Enable **Unified API**, then choose **Save and apply**.
-5. Keep **Require API key** on for protected access, then copy an enabled key from **API access**. Add separate keys for different clients when useful.
+1. Add a direct endpoint using a provider preset, or connect an API over SSH. Test the endpoint and create it.
+2. Open **Unified API** and choose **Enable Unified API**.
+3. Choose **Add Models**, select a source endpoint, and search or select the visible results. Set public aliases such as `deepseek-fast` for `deepseek-v4-flash`.
+4. Keep **Require API key** on for protected access, then copy an enabled key from **API access**. Add separate keys for different clients when useful.
+5. Under **Connect a client**, copy the base URL environment variable and set `OPENAI_API_KEY` to the copied key. Select a public model and copy its streaming request example.
 
 In **Add Models**, select discovered models or enter an upstream model ID manually, then edit **Public name** to choose the alias clients will request. Use the pencil button beside an existing Unified API model to change its alias without changing its upstream model, route identity, or budgets. For example, clients can request `deepseek-fast` while ModelMoor forwards `deepseek-v4-flash` upstream. The model list exposes the public alias; clients using an old alias must update after it is renamed.
+
+Model search accepts multiple terms across model IDs and aliases; the Unified API list also searches endpoint names. **Select visible** adds the current results without clearing previous selections. **Selected only** reviews the selection before saving. Removing a unified model requires confirmation and keeps the upstream model. Request examples contain no stored secrets and use Responses for native Codex routes; other routes use Chat Completions. Ollama's native preset supports discovery; use an OpenAI-compatible endpoint with Ollama's `/v1` URL when exposing its models through Unified API.
 
 After editing the local configuration file, use **Reload Configuration** in the main window toolbar. ModelMoor reads the file and refreshes SSH connections, managed subscriptions, and Unified API routing without writing the previous in-memory configuration back to disk. Existing connection requests are retained for tunnels that still exist. Unapplied form edits trigger the existing apply/discard/cancel prompt; choose discard to load the external file without saving the form first. An invalid configuration leaves the active configuration unchanged and displays an error.
 

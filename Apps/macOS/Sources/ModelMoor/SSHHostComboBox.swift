@@ -18,30 +18,39 @@ struct SSHHostComboBox: NSViewRepresentable {
         comboBox.numberOfVisibleItems = 14
         comboBox.isEditable = true
         comboBox.placeholderString = "Choose from ~/.ssh/config or type a target"
-        comboBox.addItems(withObjectValues: targets.map(\.alias))
+        context.coordinator.updateItems(targets.map(\.alias), in: comboBox)
         comboBox.stringValue = value
         return comboBox
     }
 
     func updateNSView(_ comboBox: NSComboBox, context: Context) {
-        let aliases = targets.map(\.alias)
-        let currentItems = (0..<comboBox.numberOfItems).compactMap {
-            comboBox.itemObjectValue(at: $0) as? String
-        }
-        if currentItems != aliases {
-            comboBox.removeAllItems()
-            comboBox.addItems(withObjectValues: aliases)
-        }
+        context.coordinator.updateBinding($value)
+        context.coordinator.updateItems(targets.map(\.alias), in: comboBox)
         if comboBox.stringValue != value {
             comboBox.stringValue = value
         }
     }
 
+    @MainActor
     final class Coordinator: NSObject, NSComboBoxDelegate {
         @Binding private var value: String
+        private var installedAliases: [String] = []
+        private(set) var itemUpdateCount = 0
 
         init(value: Binding<String>) {
             _value = value
+        }
+
+        func updateBinding(_ binding: Binding<String>) {
+            _value = binding
+        }
+
+        func updateItems(_ aliases: [String], in comboBox: NSComboBox) {
+            guard installedAliases != aliases else { return }
+            installedAliases = aliases
+            itemUpdateCount += 1
+            comboBox.removeAllItems()
+            comboBox.addItems(withObjectValues: aliases)
         }
 
         func controlTextDidChange(_ notification: Notification) {

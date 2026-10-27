@@ -192,6 +192,7 @@ struct SubscriptionAccountsView: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(provider.displayName)
+                    .textSelection(.enabled)
                     .font(.body.weight(.medium))
                 Text(description)
                     .font(.caption)

@@ -57,6 +57,7 @@ public actor ModelMoorSession {
     private var gatewayCoordinator: GatewayServiceCoordinator?
     private var budgetLedger: GatewayBudgetLedger?
     private var ownership: RuntimeOwnership?
+    private var runtimeStopTask: Task<Void, Never>?
     private var networkMonitor: NetworkMonitor?
     private var networkAvailable = true
     private var runtimeSuspended = false
@@ -311,6 +312,7 @@ public actor ModelMoorSession {
         owner: String,
         tunnelIDs: Set<UUID>? = nil
     ) async throws {
+        guard runtimeStopTask == nil else { throw SessionError.runtimeNotOwned }
         if ownership == nil {
             ownership = try RuntimeOwnership.acquire(
                 lockFileURL: runtimeLockURL,
@@ -334,6 +336,18 @@ public actor ModelMoorSession {
     }
 
     public func stopRuntime() async {
+        if let runtimeStopTask {
+            await runtimeStopTask.value
+            return
+        }
+        let task = Task { await self.finishStoppingRuntime() }
+        runtimeStopTask = task
+        await task.value
+        runtimeStopTask = nil
+    }
+
+    private func finishStoppingRuntime() async {
+        snapshot.requestedTunnelIDs.removeAll()
         if subscriptionOAuthLoginTask != nil {
             await cancelSubscriptionLogin()
         }
@@ -388,7 +402,7 @@ public actor ModelMoorSession {
     }
 
     public func connectTunnel(_ tunnelID: UUID) async throws {
-        guard ownership != nil else {
+        guard ownership != nil, runtimeStopTask == nil else {
             throw SessionError.runtimeOwnedElsewhere(owner: recordedRuntimeOwner())
         }
         guard let tunnel = snapshot.configuration.tunnels.first(where: { $0.id == tunnelID }) else {
@@ -412,7 +426,7 @@ public actor ModelMoorSession {
     /// Starts every tunnel that has at least one enabled mapping. Used by the
     /// GUI "Connect All" action; requires this process to own the runtime.
     public func connectAllTunnels() async throws {
-        guard ownership != nil else {
+        guard ownership != nil, runtimeStopTask == nil else {
             throw SessionError.runtimeOwnedElsewhere(owner: recordedRuntimeOwner())
         }
         snapshot.requestedTunnelIDs = Set(
@@ -432,7 +446,7 @@ public actor ModelMoorSession {
     /// without releasing the runtime owner lock, then resumes on wake.
     /// Only meaningful while this process owns the runtime.
     public func suspendRuntime(reason: String) async {
-        guard ownership != nil else { return }
+        guard ownership != nil, runtimeStopTask == nil else { return }
         runtimeSuspended = true
         if let gatewayCoordinator {
             snapshot.gatewayState = await gatewayCoordinator.reconcile(snapshot: nil)
@@ -448,7 +462,7 @@ public actor ModelMoorSession {
     }
 
     public func resumeRuntime() async {
-        guard ownership != nil else { return }
+        guard ownership != nil, runtimeStopTask == nil else { return }
         runtimeSuspended = false
         await reconcileManagedSubscriptions()
         await tunnelService?.setRuntimeAvailable(networkAvailable, reason: "Waiting for network")
@@ -860,6 +874,7 @@ public actor ModelMoorSession {
     }
 
     private func handleTunnelStatus(_ status: TunnelStatus) async {
+        guard ownership != nil, runtimeStopTask == nil else { return }
         snapshot.tunnelStatuses[status.tunnelID] = status
         await diagnostics.append(
             subject: .mooring(status.tunnelID),
@@ -875,7 +890,7 @@ public actor ModelMoorSession {
     }
 
     private func reconcileTunnels() async {
-        guard ownership != nil else { return }
+        guard ownership != nil, runtimeStopTask == nil else { return }
         let desired = snapshot.configuration.tunnels.filter {
             snapshot.requestedTunnelIDs.contains($0.id)
         }
@@ -883,7 +898,7 @@ public actor ModelMoorSession {
     }
 
     private func reconcileGateway() async {
-        guard ownership != nil, !runtimeSuspended else { return }
+        guard ownership != nil, runtimeStopTask == nil, !runtimeSuspended else { return }
         let configuration = snapshot.configuration
         guard configuration.gateway.enabled else {
             if let gatewayCoordinator {
@@ -899,6 +914,7 @@ public actor ModelMoorSession {
                 snapshot.tunnelStatuses[tunnel.id]?.phase == .connected ? tunnel.enabledMappings.map(\.id) : nil
             }.flatMap { $0 })
             let subscriptionRouting = try await subscriptionRoutingCredentials()
+            guard ownership != nil, runtimeStopTask == nil, !runtimeSuspended else { return }
             let gatewaySnapshot = GatewaySnapshot(
                 configuration: configuration,
                 gatewayAPIKeys: gatewayAPIKeys,
@@ -1004,6 +1020,7 @@ public actor ModelMoorSession {
     }
 
     private func networkAvailabilityChanged(_ availability: NetworkAvailability) async {
+        guard ownership != nil, runtimeStopTask == nil else { return }
         networkAvailable = availability == .available
         await tunnelService?.setRuntimeAvailable(networkAvailable, reason: "Waiting for network")
         if networkAvailable {

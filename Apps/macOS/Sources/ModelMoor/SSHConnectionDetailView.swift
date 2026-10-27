@@ -31,6 +31,7 @@ struct SSHConnectionDetailView: View {
                         }
                     }
                     .formStyle(.grouped)
+                    .textSelection(.enabled)
                     if isDirty { applyBar(binding.wrappedValue) }
                 }
             } else {
@@ -102,7 +103,7 @@ struct SSHConnectionDetailView: View {
                 .background(statusColor(status.phase).opacity(0.12), in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                Text(status.message).font(.headline)
+                Text(status.message).font(.headline).textSelection(.enabled)
                 Text("SSH alias \(connection.sshHost), \(connection.enabledMappings.count) active forwards")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -123,7 +124,7 @@ struct SSHConnectionDetailView: View {
         }
         .padding(.horizontal, 24)
         .frame(minHeight: 76)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private func basics(_ connection: Binding<TunnelConfiguration>) -> some View {
@@ -198,7 +199,8 @@ struct SSHConnectionDetailView: View {
                         Text(forwardSummary(mapping.wrappedValue))
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()
                     Button("Edit…") {
@@ -266,10 +268,16 @@ struct SSHConnectionDetailView: View {
                     NumberField(value: connection.keepAliveFailureCount, suffix: "misses", width: 72)
                 }
                 LabeledContent("Control command") {
-                    Text(verbatim: "/usr/bin/ssh -M -N \(connection.wrappedValue.sshHost)")
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                    CopyableText(value: SSHCommandPresentation.render(
+                        SSHCommandBuilder(controlDirectoryURL: model.runtimeProfile.runtimeDirectoryURL)
+                            .command(for: connection.wrappedValue)
+                    ))
+                }
+                LabeledContent("Forward command") {
+                    CopyableText(value: SSHCommandPresentation.render(
+                        SSHCommandBuilder(controlDirectoryURL: model.runtimeProfile.runtimeDirectoryURL)
+                            .controlCommand(.forward, for: connection.wrappedValue)
+                    ))
                 }
                 Button("Restore Defaults") {
                     connection.wrappedValue.connectTimeoutSeconds = 10

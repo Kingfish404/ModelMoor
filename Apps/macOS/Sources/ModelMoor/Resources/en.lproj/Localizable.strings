@@ -22,6 +22,8 @@
 	<string>%lld active of %lld accounts</string>
 	<key>%lld models discovered</key>
 	<string>%lld models discovered</string>
+	<key>%lld selected</key>
+	<string>%lld selected</string>
 	<key>1 active account</key>
 	<string>1 active account</string>
 	<key>1 disabled account</key>
@@ -166,12 +168,16 @@
 	<string>Choose which discovered models the Unified API should expose to clients.</string>
 	<key>Clear Search</key>
 	<string>Clear Search</string>
+	<key>Clear selection</key>
+	<string>Clear selection</string>
 	<key>Clients send an enabled key as an Authorization bearer token.</key>
 	<string>Clients send an enabled key as an Authorization bearer token.</string>
 	<key>Clients using %@ will immediately lose access.</key>
 	<string>Clients using %@ will immediately lose access.</string>
 	<key>Clients using %@ will need the replacement. The new key will be copied to the pasteboard.</key>
 	<string>Clients using %@ will need the replacement. The new key will be copied to the pasteboard.</string>
+	<key>Clients using this public model name will lose access. The upstream model is kept.</key>
+	<string>Clients using this public model name will lose access. The upstream model is kept.</string>
 	<key>Cloud API</key>
 	<string>Cloud API</string>
 	<key>Collapse Others</key>
@@ -192,6 +198,10 @@
 	<string>Connect All</string>
 	<key>Connect Selected</key>
 	<string>Connect Selected</string>
+	<key>Connect Subscription</key>
+	<string>Connect Subscription</string>
+	<key>Connect a client</key>
+	<string>Connect a client</string>
 	<key>Connect a supported provider below. You can add more than one account for each provider.</key>
 	<string>Connect a supported provider below. You can add more than one account for each provider.</string>
 	<key>Connect after creation and at login</key>
@@ -226,6 +236,8 @@
 	<string>Copy Code</string>
 	<key>Copy Diagnostic Summary</key>
 	<string>Copy Diagnostic Summary</string>
+	<key>Copy Environment</key>
+	<string>Copy Environment</string>
 	<key>Copy Local Address</key>
 	<string>Copy Local Address</string>
 	<key>Copy Model ID</key>
@@ -234,6 +246,8 @@
 	<string>Copy Model ID, %lld</string>
 	<key>Copy Remote Address</key>
 	<string>Copy Remote Address</string>
+	<key>Copy Request</key>
+	<string>Copy Request</string>
 	<key>Copy SSH Argument</key>
 	<string>Copy SSH Argument</string>
 	<key>Copy URL</key>
@@ -244,6 +258,8 @@
 	<string>Copy Unified URL</string>
 	<key>Copy model ID</key>
 	<string>Copy model ID</string>
+	<key>Copy text</key>
+	<string>Copy text</string>
 	<key>Couldn’t Check for Updates</key>
 	<string>Couldn’t Check for Updates</string>
 	<key>Counts include requests whose upstream response contains usage data.</key>
@@ -352,6 +368,8 @@
 	<string>Enable %@</string>
 	<key>Enable Unified API</key>
 	<string>Enable Unified API</string>
+	<key>Enable an OpenAI-compatible endpoint before adding models.</key>
+	<string>Enable an OpenAI-compatible endpoint before adding models.</string>
 	<key>Enabled</key>
 	<string>Enabled</string>
 	<key>Endpoint enabled</key>
@@ -370,6 +388,8 @@
 	<string>Failure threshold</string>
 	<key>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</key>
 	<string>Fixed forwards connect one destination. Dynamic forwards provide a SOCKS 4/5 proxy on this Mac (-D) or the SSH server (-R).</string>
+	<key>Forward command</key>
+	<string>Forward command</string>
 	<key>Forwarding path</key>
 	<string>Forwarding path</string>
 	<key>Give the key a client or device name. The generated value is stored in the private secrets file and copied to the pasteboard.</key>
@@ -516,6 +536,8 @@
 	<string>No accounts connected</string>
 	<key>No discovered models</key>
 	<string>No discovered models</string>
+	<key>No eligible endpoints</key>
+	<string>No eligible endpoints</string>
 	<key>No matching connections or endpoints</key>
 	<string>No matching connections or endpoints</string>
 	<key>No matching upstream response included token usage in this range.</key>
@@ -528,6 +550,8 @@
 	<string>No recorded traffic</string>
 	<key>No reported usage</key>
 	<string>No reported usage</string>
+	<key>No selected models</key>
+	<string>No selected models</string>
 	<key>No unified models</key>
 	<string>No unified models</string>
 	<key>Not Now</key>
@@ -584,6 +608,8 @@
 	<string>Public model name “%@” is already in use.</string>
 	<key>Public name</key>
 	<string>Public name</string>
+	<key>Public name for %@</key>
+	<string>Public name for %@</string>
 	<key>Quit %@</key>
 	<string>Quit %@</string>
 	<key>Ready</key>
@@ -606,6 +632,8 @@
 	<string>Refresh Status</string>
 	<key>Refresh all endpoint status</key>
 	<string>Refresh all endpoint status</string>
+	<key>Refresh models</key>
+	<string>Refresh models</string>
 	<key>Refresh the endpoint or enter an upstream model ID manually.</key>
 	<string>Refresh the endpoint or enter an upstream model ID manually.</string>
 	<key>Refresh the panel to try loading it again.</key>
@@ -634,6 +662,8 @@
 	<string>Remote over SSH</string>
 	<key>Remote port forwarding (-R)</key>
 	<string>Remote port forwarding (-R)</string>
+	<key>Remove</key>
+	<string>Remove</string>
 	<key>Remove %@</key>
 	<string>Remove %@</string>
 	<key>Remove %@ from Unified API</key>
@@ -650,6 +680,8 @@
 	<string>Remove all limits</string>
 	<key>Remove model from Unified API</key>
 	<string>Remove model from Unified API</string>
+	<key>Remove model from Unified API?</key>
+	<string>Remove model from Unified API?</string>
 	<key>Remove port forward</key>
 	<string>Remove port forward</string>
 	<key>Remove the API endpoint before removing its port forward</key>
@@ -716,8 +748,14 @@
 	<string>Search Sidebar</string>
 	<key>Search connections and endpoints</key>
 	<string>Search connections and endpoints</string>
+	<key>Search models</key>
+	<string>Search models</string>
 	<key>Secrets File</key>
 	<string>Secrets File</string>
+	<key>Select visible</key>
+	<string>Select visible</string>
+	<key>Selected only</key>
+	<string>Selected only</string>
 	<key>Selected time</key>
 	<string>Selected time</string>
 	<key>Selected tokens</key>
@@ -730,6 +768,8 @@
 	<string>Sent and received data over %@</string>
 	<key>Set Key…</key>
 	<string>Set Key…</string>
+	<key>Set OPENAI_API_KEY to an enabled key from API access.</key>
+	<string>Set OPENAI_API_KEY to an enabled key from API access.</string>
 	<key>Settings</key>
 	<string>Settings</string>
 	<key>Settings…</key>

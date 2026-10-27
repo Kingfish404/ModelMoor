@@ -1,3 +1,4 @@
+import ModelMoorApplication
 import ModelMoorCore
 import ModelMoorSystem
 import SwiftUI
@@ -9,9 +10,14 @@ struct AddUnifiedModelsSheet: View {
     @State private var selectedModels = Set<String>()
     @State private var publicNames: [String: String] = [:]
     @State private var manualModel = ""
+    @State private var searchText = ""
+    @State private var selectedOnly = false
+    @State private var isSaving = false
+    @State private var saveError: String?
 
     var body: some View {
         VStack(spacing: 0) {
+            ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Add models to Unified API")
                     .font(.title2.weight(.semibold))
@@ -20,25 +26,77 @@ struct AddUnifiedModelsSheet: View {
                         Text(endpoint.name).tag(Optional(endpoint.id))
                     }
                 }
+                .disabled(isSaving)
 
-                if availableModelIDs.isEmpty {
+                HStack {
+                    TextField("Search models", text: $searchText)
+                        .textFieldStyle(.roundedBorder)
+                    Toggle("Selected only", isOn: $selectedOnly)
+                        .toggleStyle(.checkbox)
+                    Button {
+                        guard let endpointID else { return }
+                        Task { await model.inspectEndpoint(endpointID) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("Refresh models")
+                    .accessibilityLabel("Refresh models")
+                    .disabled(endpointID == nil || isRefreshing || isSaving)
+                }
+
+                HStack {
+                    Text("\(selectedModels.count) selected")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    if isRefreshing { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Button("Select visible") {
+                        selectedModels.formUnion(visibleModelIDs)
+                    }
+                    .disabled(visibleModelIDs.isEmpty || isSaving)
+                    Button("Clear selection") { selectedModels.removeAll() }
+                        .disabled(selectedModels.isEmpty || isSaving)
+                }
+
+                if eligibleEndpoints.isEmpty {
+                    ContentUnavailableView {
+                        Label("No eligible endpoints", systemImage: "link")
+                    } description: {
+                        Text("Enable an OpenAI-compatible endpoint before adding models.")
+                    }
+                } else if availableModelIDs.isEmpty {
                     ContentUnavailableView {
                         Label("No discovered models", systemImage: "cube.transparent")
                     } description: {
                         Text("Refresh the endpoint or enter an upstream model ID manually.")
                     }
+                } else if visibleModelIDs.isEmpty {
+                    if selectedOnly && selectedModels.isEmpty {
+                        ContentUnavailableView("No selected models", systemImage: "checklist")
+                    } else {
+                        ContentUnavailableView.search(text: searchText)
+                    }
                 } else {
-                    List(availableModelIDs, id: \.self) { modelID in
+                    List(visibleModelIDs, id: \.self) { modelID in
                         HStack {
                             Toggle(modelID, isOn: selectionBinding(modelID))
                             Spacer()
                             if selectedModels.contains(modelID) {
                                 TextField("Public name", text: publicNameBinding(modelID))
                                     .frame(width: 220)
+                                    .accessibilityLabel("Public name for \(modelID)")
                             }
                         }
                     }
-                    .frame(minHeight: 220)
+                    .frame(height: 240)
+                    .disabled(isSaving)
+                }
+
+                if let endpointID, let message = model.inspections[endpointID]?.errorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .textSelection(.enabled)
                 }
 
                 HStack {
@@ -49,38 +107,55 @@ struct AddUnifiedModelsSheet: View {
                         selectedModels.insert(value)
                         publicNames[value] = publicNames[value] ?? value
                         manualModel = ""
+                        searchText = ""
                     }
                     .disabled(manualModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+                .disabled(endpointID == nil || isSaving)
 
                 if let duplicate = duplicatePublicName {
                     Label("Public model name “\(duplicate)” is already in use.", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
                 }
+                if let saveError {
+                    Label(saveError, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .textSelection(.enabled)
+                }
             }
             .padding(24)
+            }
 
             Divider()
             HStack {
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(isSaving)
                 Spacer()
+                if isSaving { ProgressView().controlSize(.small) }
                 Button(addButtonTitle) {
                     guard let endpointID else { return }
+                    isSaving = true
+                    saveError = nil
                     let routes = selectedModels.sorted().map {
-                        (publicModel: publicNames[$0] ?? $0, upstreamModel: $0)
+                        (publicModel: (publicNames[$0] ?? $0).trimmingCharacters(in: .whitespacesAndNewlines), upstreamModel: $0)
                     }
                     Task {
+                        defer { isSaving = false }
                         if await model.addRoutes(routes, endpointID: endpointID) { dismiss() }
+                        else { saveError = model.errorMessage }
                     }
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(endpointID == nil || selectedModels.isEmpty || duplicatePublicName != nil || hasBlankName)
+                .disabled(isSaving || !eligibleEndpoints.contains { $0.id == endpointID } || selectedModels.isEmpty || duplicatePublicName != nil || hasBlankName)
             }
             .padding(16)
         }
-        .frame(width: 620, height: 520)
+        .frame(width: 680, height: 580)
+        .interactiveDismissDisabled(isSaving)
         .onAppear {
             if endpointID == nil,
                let preferred = model.preferredModelEndpointID,
@@ -94,6 +169,8 @@ struct AddUnifiedModelsSheet: View {
         .onChange(of: endpointID) { _, _ in
             selectedModels.removeAll()
             publicNames.removeAll()
+            manualModel = ""
+            saveError = nil
         }
     }
 
@@ -107,7 +184,19 @@ struct AddUnifiedModelsSheet: View {
     }
 
     private var availableModelIDs: [String] {
-        Set(availableModels.map(\.id)).union(publicNames.keys).sorted()
+        Set(availableModels.map(\.id)).union(publicNames.keys).union(selectedModels).sorted()
+    }
+
+    private var visibleModelIDs: [String] {
+        let query = PresentationSearchQuery(searchText)
+        return availableModelIDs.filter {
+            (!selectedOnly || selectedModels.contains($0))
+                && query.matches(fields: [$0, publicNames[$0] ?? $0])
+        }
+    }
+
+    private var isRefreshing: Bool {
+        endpointID.map { model.inspectingEndpointIDs.contains($0) } ?? false
     }
 
     private var addButtonTitle: String {

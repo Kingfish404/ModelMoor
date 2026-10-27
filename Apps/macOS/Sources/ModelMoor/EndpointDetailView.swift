@@ -11,6 +11,7 @@ struct EndpointDetailView: View {
     @State private var draft: APIEndpointConfiguration?
     @State private var showsModels = false
     @State private var showsDeleteConfirmation = false
+    @State private var modelSearch = ""
 
     var body: some View {
         Group {
@@ -36,6 +37,7 @@ struct EndpointDetailView: View {
                         }
                     }
                     .formStyle(.grouped)
+                    .textSelection(.enabled)
                     if isDirty { applyBar(binding.wrappedValue) }
                 }
             } else {
@@ -49,6 +51,7 @@ struct EndpointDetailView: View {
         }
         .onDisappear { dirtyDrafts.unregister(id: draftID) }
         .onChange(of: endpointID) { oldID, _ in
+            modelSearch = ""
             dirtyDrafts.unregister(id: .endpoint(oldID))
             reloadDraft()
             synchronizeDirtyDraft()
@@ -123,7 +126,7 @@ struct EndpointDetailView: View {
         }
         .padding(.horizontal, 24)
         .frame(minHeight: 76)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 
     private func basics(_ endpoint: Binding<APIEndpointConfiguration>) -> some View {
@@ -141,10 +144,10 @@ struct EndpointDetailView: View {
         Section("Connection") {
             switch endpoint.source {
             case let .directHTTPS(origin):
-                LabeledContent("HTTP(S) origin", value: origin.absoluteString)
+                LabeledContent("HTTP(S) origin") { CopyableText(value: origin.absoluteString) }
                 if let url = model.endpointURL(endpoint) {
                     LabeledContent("Base URL") {
-                        Text(url.absoluteString).font(.callout.monospaced()).textSelection(.enabled)
+                        CopyableText(value: url.absoluteString)
                     }
                 }
             case let .managedCLIProxy(origin):
@@ -204,7 +207,15 @@ struct EndpointDetailView: View {
                 if remoteModels.isEmpty {
                     Text("No model IDs are available yet.").foregroundStyle(.secondary)
                 } else {
-                    ForEach(remoteModels) { remoteModel in
+                    TextField("Search models", text: $modelSearch)
+                        .textFieldStyle(.roundedBorder)
+                    let query = PresentationSearchQuery(modelSearch)
+                    let filteredModels = remoteModels.filter { query.matches(fields: [$0.id]) }
+                    if filteredModels.isEmpty {
+                        ContentUnavailableView.search(text: modelSearch)
+                    }
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(filteredModels) { remoteModel in
                         HStack {
                             Text(remoteModel.id).font(.callout.monospaced()).textSelection(.enabled)
                             Spacer()
@@ -218,6 +229,7 @@ struct EndpointDetailView: View {
                             .accessibilityLabel("Copy \(remoteModel.id)")
                         }
                     }
+                    }
                 }
             } label: {
                 let count = model.inspections[endpoint.id]?.models?.count ?? 0
@@ -230,8 +242,11 @@ struct EndpointDetailView: View {
         Section("Unified API") {
             let count = model.configuration.routes.filter { $0.endpointID == endpoint.id && $0.enabled }.count
             LabeledContent("Included models", value: "\(count)")
-            Button("Manage Models…", action: manageModels)
-                .disabled(endpoint.kind != .openAICompatible)
+            Button("Manage Models…") {
+                model.preferredModelEndpointID = endpoint.id
+                manageModels()
+            }
+            .disabled(endpoint.kind != .openAICompatible || !endpoint.enabled || isDirty)
         }
     }
 
@@ -291,16 +306,7 @@ struct EndpointDetailView: View {
     private var isDirty: Bool { draft != original }
 
     private var readiness: EndpointReadiness {
-        if original?.enabled == false { return .disabled }
-        if model.inspectingEndpointIDs.contains(endpointID) { return .checking }
-        if let endpoint = original,
-           endpoint.authentication != .none,
-           !model.hasToken(for: endpointID) {
-            return .needsAttention("Add API key")
-        }
-        guard let inspection = model.inspections[endpointID] else { return .unknown }
-        if let message = inspection.errorMessage { return .needsAttention(message) }
-        return .ready(inspection.models?.count ?? 0)
+        original.map(model.endpointReadiness) ?? .unknown
     }
 
     private var readinessColor: Color {

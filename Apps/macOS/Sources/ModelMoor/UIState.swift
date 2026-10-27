@@ -376,6 +376,8 @@ enum EndpointSourceChoice: String, CaseIterable, Identifiable {
 enum EndpointPreset: String, CaseIterable, Identifiable {
     case deepSeek
     case openAI
+    case openRouter
+    case lmStudio
     case ollama
     case custom
 
@@ -385,18 +387,49 @@ enum EndpointPreset: String, CaseIterable, Identifiable {
         switch self {
         case .deepSeek: "DeepSeek"
         case .openAI: "OpenAI-compatible"
+        case .openRouter: "OpenRouter"
+        case .lmStudio: "LM Studio"
         case .ollama: "Ollama"
         case .custom: "Custom HTTP"
         }
     }
+
+    var defaultBaseURL: String {
+        switch self {
+        case .deepSeek: "https://api.deepseek.com"
+        case .openAI: "https://api.openai.com/v1"
+        case .openRouter: "https://openrouter.ai/api/v1"
+        case .lmStudio: "http://127.0.0.1:1234/v1"
+        case .ollama: "http://127.0.0.1:11434"
+        case .custom: ""
+        }
+    }
+
+    var usesBearerAuthentication: Bool {
+        switch self {
+        case .deepSeek, .openAI, .openRouter, .lmStudio: true
+        case .ollama, .custom: false
+        }
+    }
 }
 
-enum EndpointReadiness {
+enum EndpointReadiness: Equatable {
     case disabled
     case unknown
     case checking
     case ready(Int)
     case needsAttention(String)
+
+    static func resolve(enabled: Bool, checking: Bool, hasCredential: Bool, inspection: EndpointInspection?) -> Self {
+        if !enabled { return .disabled }
+        if checking { return .checking }
+        if !hasCredential { return .needsAttention(AppLocalization.string("Add API key")) }
+        guard let inspection else { return .unknown }
+        if let message = inspection.errorMessage { return .needsAttention(message) }
+        guard let statusCode = inspection.statusCode else { return .unknown }
+        guard (200..<300).contains(statusCode) else { return .needsAttention("HTTP \(statusCode)") }
+        return .ready(inspection.models?.count ?? 0)
+    }
 
     var title: String {
         switch self {

@@ -1,3 +1,4 @@
+import ModelMoorApplication
 import ModelMoorCore
 import ModelMoorSystem
 import SwiftUI
@@ -12,6 +13,10 @@ struct GatewayDetailView: View {
     @State private var keyToDelete: GatewayAPIKeyConfiguration?
     @State private var budgetRoute: ModelRouteConfiguration?
     @State private var aliasRoute: ModelRouteConfiguration?
+    @State private var searchText = ""
+    @State private var routeToDelete: ModelRouteConfiguration?
+    @State private var clientRouteID: UUID?
+    @State private var isRemovingRoute = false
 
     var body: some View {
         ScrollView {
@@ -20,6 +25,7 @@ struct GatewayDetailView: View {
                 authentication
                 if model.configuration.gateway.enabled {
                     models
+                    clientConnection
                     advanced
                 } else {
                     disabledContent
@@ -29,6 +35,21 @@ struct GatewayDetailView: View {
             .padding(28)
         }
         .navigationTitle("Unified API")
+        .confirmationDialog("Remove model from Unified API?", isPresented: Binding(
+            get: { routeToDelete != nil },
+            set: { if !$0 { routeToDelete = nil } }
+        )) {
+            Button("Remove", role: .destructive) {
+                guard let routeToDelete else { return }
+                isRemovingRoute = true
+                Task {
+                    defer { isRemovingRoute = false }
+                    _ = await model.deleteRoute(routeToDelete.id)
+                }
+            }
+        } message: {
+            Text("Clients using this public model name will lose access. The upstream model is kept.")
+        }
         .sheet(item: $aliasRoute) { route in
             ModelAliasSheet(route: route).environmentObject(model)
         }
@@ -201,7 +222,12 @@ struct GatewayDetailView: View {
     }
 
     private var models: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let endpointNames = Dictionary(model.configuration.endpoints.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        let query = PresentationSearchQuery(searchText)
+        let routes = model.configuration.routes.filter {
+            query.matches(fields: [$0.publicModel, $0.upstreamModel, endpointNames[$0.endpointID] ?? ""])
+        }
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Models").font(.title2.weight(.semibold))
                 Text(verbatim: String(model.configuration.routes.filter(\.enabled).count))
@@ -221,25 +247,43 @@ struct GatewayDetailView: View {
                 }
                 .frame(minHeight: 220)
             } else {
-                Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 9) {
-                    GridRow {
+                TextField("Search models", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                if routes.isEmpty {
+                    ContentUnavailableView.search(text: searchText)
+                }
+                LazyVGrid(columns: [
+                    GridItem(.flexible(), alignment: .leading),
+                    GridItem(.flexible(), alignment: .leading),
+                    GridItem(.flexible(), alignment: .leading),
+                    GridItem(.fixed(90), alignment: .leading),
+                    GridItem(.fixed(100), alignment: .trailing)
+                ], alignment: .leading, spacing: 12) {
+                    Group {
                         Text("Public model").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Text("API endpoint").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Text("Upstream model").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Text("Status").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                         Text(verbatim: "")
                     }
-                    Divider().gridCellColumns(5)
-                    ForEach(model.configuration.routes) { route in
-                        GridRow {
-                            Text(route.publicModel).font(.callout.monospaced())
-                            Button(endpointName(route.endpointID)) { model.showEndpoint(route.endpointID) }
+                    ForEach(routes) { route in
+                        Group {
+                            Text(route.publicModel).font(.callout.monospaced()).textSelection(.enabled)
+                                .lineLimit(2).help(route.publicModel)
+                            Button(endpointNames[route.endpointID] ?? AppLocalization.string("Missing endpoint")) { model.showEndpoint(route.endpointID) }
                                 .buttonStyle(.link)
                             Text(route.upstreamModel).font(.callout.monospaced()).foregroundStyle(.secondary)
+                                .lineLimit(2).help(route.upstreamModel)
                             Label(route.enabled ? "Enabled" : "Disabled", systemImage: route.enabled ? "checkmark.circle.fill" : "circle")
                                 .labelStyle(.titleAndIcon)
                                 .foregroundStyle(route.enabled ? .green : .secondary)
                             HStack {
+                                Button { model.copy(route.publicModel) } label: {
+                                    Image(systemName: "doc.on.doc")
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Copy model ID")
+                                .accessibilityLabel("Copy \(route.publicModel)")
                                 Button { aliasRoute = route } label: {
                                     Image(systemName: "pencil")
                                 }
@@ -253,19 +297,75 @@ struct GatewayDetailView: View {
                                 .help("Model budget")
                                 .accessibilityLabel("Model budget")
                             Button(role: .destructive) {
-                                model.removeRoute(route.id)
-                                Task { _ = await model.saveGateway() }
+                                routeToDelete = route
                             } label: {
                                 Image(systemName: "trash")
                             }
                             .buttonStyle(.borderless)
                             .help("Remove model from Unified API")
                             .accessibilityLabel("Remove \(route.publicModel) from Unified API")
+                            .disabled(isRemovingRoute)
                             }
                         }
                     }
                 }
                 .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private var clientRoutes: [ModelRouteConfiguration] {
+        let enabledEndpointIDs = Set(model.configuration.endpoints.filter(\.enabled).map(\.id))
+        return model.configuration.routes.filter { route in
+            route.enabled && enabledEndpointIDs.contains(route.endpointID)
+        }
+    }
+
+    private var clientRoute: ModelRouteConfiguration? {
+        let routes = clientRoutes
+        return routes.first { $0.id == clientRouteID } ?? routes.first
+    }
+
+    private var clientConnection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Connect a client").font(.title2.weight(.semibold))
+            HStack {
+                Text(verbatim: gatewayURL).font(.callout.monospaced()).textSelection(.enabled)
+                Spacer()
+                Button("Copy Environment") {
+                    model.copy(ClientConnectionSnippet.environment(port: model.configuration.gateway.listenPort))
+                }
+            }
+            if model.configuration.gateway.requiresAPIKey {
+                Text("Set OPENAI_API_KEY to an enabled key from API access.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let clientRoute {
+                Picker("Public model", selection: Binding(
+                    get: { clientRoute.id },
+                    set: { clientRouteID = $0 }
+                )) {
+                    ForEach(clientRoutes) { route in
+                        Text(route.publicModel).tag(route.id)
+                    }
+                }
+                let snippet = ClientConnectionSnippet.request(
+                    port: model.configuration.gateway.listenPort,
+                    model: clientRoute.publicModel,
+                    requiresAPIKey: model.configuration.gateway.requiresAPIKey,
+                    usesResponses: ClientConnectionSnippet.usesResponses(
+                        source: model.configuration.endpoints.first { $0.id == clientRoute.endpointID }?.source,
+                        upstreamModel: clientRoute.upstreamModel
+                    )
+                )
+                Text(verbatim: snippet)
+                    .font(.caption.monospaced())
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
+                    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 6))
+                Button("Copy Request") { model.copy(snippet) }
             }
         }
     }
@@ -341,7 +441,7 @@ struct GatewayDetailView: View {
     private var gatewayTitle: String {
         if !model.configuration.gateway.enabled { return "Unified API is off" }
         return switch model.gatewayState {
-        case .stopped: "Starting"
+        case .stopped: "Stopped"
         case .running: "Unified API is ready"
         case let .failed(message): "Needs attention, \(message)"
         }

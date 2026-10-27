@@ -860,6 +860,52 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertEqual(events.filter { $0 == "master:\(builder.controlPath(for: second))" }.count, 1)
     }
 
+    func testRapidReconnectAndStopAllWaitForClosingMaster() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ModelMoorCleanStop-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executableURL = directory.appendingPathComponent("fake-ssh")
+        let eventsURL = directory.appendingPathComponent("events")
+        try writeFakeSSH(executableURL: executableURL, eventsURL: eventsURL, shutdownDelay: 0.3)
+        let builder = SSHCommandBuilder(
+            executableURL: executableURL,
+            controlDirectoryURL: directory.appendingPathComponent("control", isDirectory: true)
+        )
+        let tunnel = TunnelConfiguration(
+            name: "Rapid toggle", sshHost: "toggle.test",
+            mappings: [PortMappingConfiguration(listenPort: 18_904)]
+        )
+        let recorder = TunnelStatusRecorder()
+        let service = TunnelService(commandBuilder: builder, localPortPreflight: { _ in }) { status in
+            Task { await recorder.append(status) }
+        }
+        await service.start(tunnel)
+        let connected = await waitForPhase(.connected, tunnelID: tunnel.id, in: recorder)
+        XCTAssertTrue(connected)
+        let stopping = Task { await service.stop(tunnel.id) }
+        let disconnecting = await waitForPhase(.disconnecting, tunnelID: tunnel.id, in: recorder)
+        XCTAssertTrue(disconnecting)
+        await service.start(tunnel)
+        await stopping.value
+        let reconnected = await waitForPhase(.connected, tunnelID: tunnel.id, minimumCount: 2, in: recorder)
+        XCTAssertTrue(reconnected)
+        let stoppingAgain = Task { await service.stop(tunnel.id) }
+        let disconnectingAgain = await waitForPhase(.disconnecting, tunnelID: tunnel.id, minimumCount: 2, in: recorder)
+        XCTAssertTrue(disconnectingAgain)
+        await service.stopAll()
+        let events = try String(contentsOf: eventsURL, encoding: .utf8)
+            .split(whereSeparator: \.isNewline).map(String.init)
+        let control = builder.controlPath(for: tunnel)
+        XCTAssertEqual(events, [
+            "master:\(control)", "forward:\(control)", "cancel:\(control)", "exit:\(control)", "terminated:\(control)",
+            "master:\(control)", "forward:\(control)", "cancel:\(control)", "exit:\(control)", "terminated:\(control)"
+        ])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: control))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: "\(control).ready"))
+        await stoppingAgain.value
+    }
+
     func testUnexpectedMasterExitReconnectsWithoutUserAction() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("ModelMoorRemoteRestart-\(UUID().uuidString)", isDirectory: true)
@@ -2103,7 +2149,8 @@ private func waitForPhase(
 private func writeFakeSSH(
     executableURL: URL,
     eventsURL: URL,
-    exitMasterAfter lifetime: Double? = nil
+    exitMasterAfter lifetime: Double? = nil,
+    shutdownDelay: Double = 0
 ) throws {
     let masterBody: String
     if let lifetime {
@@ -2138,10 +2185,17 @@ private func writeFakeSSH(
         ;;
     esac
     if [ "$master" -eq 1 ]; then
+            finish_master() {
+                trap '' HUP INT TERM
+                sleep \(shutdownDelay)
+                echo "terminated:$control" >> "\(eventsURL.path)"
+                exit 0
+            }
+            trap finish_master HUP INT TERM
       touch "$ready"
       echo "master:$control" >> "\(eventsURL.path)"
       \(masterBody)
-      exit 0
+            finish_master
     fi
     exit 0
     """

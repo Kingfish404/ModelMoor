@@ -162,9 +162,12 @@ final class ModelMoorApplicationTests: XCTestCase {
             .ownedExternally(owner: "pid=\(getpid()) owner=first")
         )
 
-        await first.stopRuntime()
+        async let firstStop: Void = first.stopRuntime()
+        async let repeatedStop: Void = first.stopRuntime()
+        _ = await (firstStop, repeatedStop)
         snapshot = await first.snapshot
         XCTAssertEqual(snapshot.runtimeState, .stopped)
+        XCTAssertTrue(snapshot.requestedTunnelIDs.isEmpty)
 
         // After a clean stop the second session may acquire the runtime.
         try await second.startRuntime(owner: "second")

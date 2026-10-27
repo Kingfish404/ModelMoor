@@ -1,3 +1,4 @@
+import ModelMoorApplication
 import ModelMoorCore
 import ModelMoorSystem
 import SwiftUI
@@ -9,7 +10,7 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 24) {
                 if llmEndpoints.isEmpty {
                     ContentUnavailableView {
                         Label("Connect your first API", systemImage: "link.badge.plus")
@@ -18,11 +19,20 @@ struct OverviewView: View {
                     } actions: {
                         Button("Add API Endpoint…", action: addEndpoint)
                             .buttonStyle(.borderedProminent)
+                        Button("Connect Subscription") { selection = .subscriptionAccounts }
                     }
                     .frame(maxWidth: .infinity, minHeight: 300)
                 } else {
                     header
                     readiness
+                    quickActions
+                    if case let .failed(message) = model.gatewayState {
+                        Button { selection = .gateway } label: {
+                            Label(message, systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        .buttonStyle(.plain)
+                    }
                     if model.configuration.gateway.enabled || !model.tokenUsage.isEmpty {
                         TokenUsageSummaryView(snapshot: model.tokenUsage)
                     }
@@ -39,7 +49,7 @@ struct OverviewView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Your local model endpoints")
-                .font(.largeTitle.weight(.semibold))
+                .font(.title2.weight(.semibold))
             Text("Expose selected models through one authenticated local API.")
                 .foregroundStyle(.secondary)
         }
@@ -51,10 +61,38 @@ struct OverviewView: View {
             Divider().frame(height: 42)
             Metric(value: "\(discoveredModelCount)", label: "Discovered models")
             Divider().frame(height: 42)
-            Metric(value: model.configuration.gateway.enabled ? "On" : "Off", label: "Unified API")
+            Metric(value: gatewayStatus, label: "Unified API")
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+
+    private var gatewayStatus: String {
+        guard model.configuration.gateway.enabled else { return AppLocalization.string("Off") }
+        switch model.gatewayState {
+        case .running: return AppLocalization.string("Ready")
+        case .failed: return AppLocalization.string("Needs Attention")
+        case .stopped: return AppLocalization.string("Stopped")
+        }
+    }
+
+    private var quickActions: some View {
+        HStack {
+            Button { selection = .gateway } label: {
+                Label("Unified API", systemImage: "point.3.connected.trianglepath.dotted")
+            }
+            Button { selection = .subscriptionAccounts } label: {
+                Label("Subscription", systemImage: "person.crop.circle")
+            }
+            Spacer()
+            Button { Task { await model.inspectAllEndpoints() } } label: {
+                Label("Refresh Status", systemImage: "arrow.clockwise")
+            }
+            .disabled(!EndpointInteractionPolicy.canRefreshAll(
+                endpoints: model.configuration.endpoints,
+                inspectingEndpointIDs: model.inspectingEndpointIDs
+            ))
+        }
     }
 
     private var attention: some View {
@@ -83,8 +121,7 @@ struct OverviewView: View {
                 .accessibilityHint("Opens API endpoint details")
             }
         }
-        .padding(16)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+        .padding(.vertical, 8)
     }
 
     private var endpoints: some View {
@@ -133,17 +170,19 @@ struct OverviewView: View {
     }
 
     private var readyEndpointCount: Int {
-        llmEndpoints.filter { model.inspections[$0.id]?.errorMessage == nil && model.inspections[$0.id]?.statusCode != nil }.count
+        llmEndpoints.filter {
+            if case .ready = model.endpointReadiness($0) { return true }
+            return false
+        }.count
     }
 
     private var discoveredModelCount: Int {
-        model.inspections.values.compactMap(\.models).reduce(0) { $0 + $1.count }
+        llmEndpoints.filter(\.enabled).reduce(0) { $0 + (model.inspections[$1.id]?.models?.count ?? 0) }
     }
 
     private var attentionItems: [(id: UUID, name: String, message: String)] {
         llmEndpoints.compactMap { endpoint in
-            guard endpoint.enabled else { return nil }
-            guard let message = model.inspections[endpoint.id]?.errorMessage else { return nil }
+            guard case let .needsAttention(message) = model.endpointReadiness(endpoint) else { return nil }
             return (endpoint.id, endpoint.name, message)
         }
     }
@@ -153,11 +192,7 @@ struct OverviewView: View {
     }
 
     private func endpointStatus(_ endpoint: APIEndpointConfiguration) -> EndpointReadiness {
-        if !endpoint.enabled { return .disabled }
-        if model.inspectingEndpointIDs.contains(endpoint.id) { return .checking }
-        guard let inspection = model.inspections[endpoint.id] else { return .unknown }
-        if let message = inspection.errorMessage { return .needsAttention(message) }
-        return .ready(inspection.models?.count ?? 0)
+        model.endpointReadiness(endpoint)
     }
 
     private func endpointStatusColor(_ endpoint: APIEndpointConfiguration) -> Color {

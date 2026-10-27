@@ -16,6 +16,7 @@ struct AddEndpointFlow: View {
     @State private var inspection: EndpointInspection?
     @State private var isTesting = false
     @State private var isCreating = false
+    @State private var creationError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,6 +52,10 @@ struct AddEndpointFlow: View {
             sshHost = sshHost.isEmpty ? (model.sshTargets.first?.alias ?? "") : sshHost
         }
         .interactiveDismissDisabled(isTesting || isCreating)
+        .onChange(of: source) { _, value in
+            if value == .ssh, !availablePresets.contains(preset) { preset = .openAI }
+            if value == .direct, baseURL.isEmpty { baseURL = preset.defaultBaseURL }
+        }
     }
 
     private var chooseSource: some View {
@@ -76,10 +81,12 @@ struct AddEndpointFlow: View {
                 Picker("Preset", selection: $preset) {
                     ForEach(availablePresets) { preset in Text(preset.title).tag(preset) }
                 }
-                .onChange(of: preset) { _, value in
-                    guard source == .direct, value == .deepSeek else { return }
-                    if name.isEmpty { name = "DeepSeek" }
-                    baseURL = "https://api.deepseek.com"
+                .onChange(of: preset) { previous, value in
+                    guard source == .direct else { return }
+                    if name.isEmpty || name == previous.title { name = value.title }
+                    if baseURL.isEmpty || baseURL == previous.defaultBaseURL {
+                        baseURL = value.defaultBaseURL
+                    }
                 }
             }
 
@@ -121,7 +128,7 @@ struct AddEndpointFlow: View {
                 }
             }
 
-            if source == .ssh && preset == .openAI {
+            if source == .ssh && preset.usesBearerAuthentication {
                 Section("Authentication") {
                     SecureField("Bearer API key, optional", text: $token)
                 }
@@ -165,9 +172,10 @@ struct AddEndpointFlow: View {
                     .foregroundStyle(.secondary)
             }
 
-            if let error = model.errorMessage, isCreating {
+            if let error = creationError {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
+                    .textSelection(.enabled)
             }
         }
     }
@@ -176,8 +184,13 @@ struct AddEndpointFlow: View {
         HStack {
             Button("Cancel", role: .cancel) { dismiss() }
                 .keyboardShortcut(.cancelAction)
-            if step > 0 { Button("Back") { step -= 1; inspection = nil } }
+                .disabled(isTesting || isCreating)
+            if step > 0 {
+                Button("Back") { step -= 1; inspection = nil; creationError = nil }
+                    .disabled(isTesting || isCreating)
+            }
             Spacer()
+            if isCreating { ProgressView().controlSize(.small) }
             if step < 2 {
                 Button("Continue") { step += 1 }
                     .buttonStyle(.borderedProminent)
@@ -215,11 +228,11 @@ struct AddEndpointFlow: View {
     private var detailsAreValid: Bool {
         if source == .ssh { return !sshHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...65_535).contains(remotePort) }
         let validURL = (try? EndpointURLResolver.parseDirectBaseURL(baseURL)) != nil
-        return validURL && (preset != .deepSeek || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        return validURL && (![EndpointPreset.deepSeek, .openRouter].contains(preset) || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
     }
 
     private var availablePresets: [EndpointPreset] {
-        source == .direct ? EndpointPreset.allCases : EndpointPreset.allCases.filter { $0 != .deepSeek }
+        source == .direct ? EndpointPreset.allCases : [.openAI, .lmStudio, .ollama, .custom]
     }
 
     private func testDirect() {
@@ -232,6 +245,8 @@ struct AddEndpointFlow: View {
     }
 
     private func create() {
+        guard !isCreating else { return }
+        creationError = nil
         isCreating = true
         Task {
             let createdID: UUID?
@@ -253,6 +268,7 @@ struct AddEndpointFlow: View {
             }
             isCreating = false
             if createdID != nil { dismiss() }
+            else { creationError = model.errorMessage }
         }
     }
 }

@@ -20,7 +20,7 @@ final class AppModel: ObservableObject {
     @Published var statuses: [UUID: TunnelStatus] = [:]
     @Published var inspections: [UUID: EndpointInspection] = [:] {
         didSet {
-            if oldValue != inspections {
+            if SidebarInspectionSearchChanges.containsChanges(from: oldValue, to: inspections) {
                 sidebarSearchSourceRevision &+= 1
             }
         }
@@ -616,7 +616,7 @@ final class AppModel: ObservableObject {
         do {
             let secret = token.trimmingCharacters(in: .whitespacesAndNewlines)
             var endpoint = try makeDirectEndpoint(name: name, baseURL: baseURL, preset: preset)
-            if preset == .openAI && secret.isEmpty {
+            if preset.usesBearerAuthentication && secret.isEmpty {
                 endpoint.authentication = .none
                 endpoint.apiKeys = []
                 endpoint.activeAPIKeyID = nil
@@ -669,7 +669,7 @@ final class AppModel: ObservableObject {
             mappings: [mapping]
         )
         let secret = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if preset == .openAI && secret.isEmpty {
+        if preset.usesBearerAuthentication && secret.isEmpty {
             endpoint.authentication = .none
             endpoint.apiKeys = []
             endpoint.activeAPIKeyID = nil
@@ -808,8 +808,23 @@ final class AppModel: ObservableObject {
         configuration.routes.removeAll { $0.id == routeID }
     }
 
+    func deleteRoute(_ routeID: UUID) async -> Bool {
+        var candidate = configuration
+        candidate.routes.removeAll { $0.id == routeID }
+        return await persistGateway(candidate)
+    }
+
     func endpointURL(_ endpoint: APIEndpointConfiguration) -> URL? {
         try? EndpointURLResolver.resolve(endpoint, mappings: mappingIndex)
+    }
+
+    func endpointReadiness(_ endpoint: APIEndpointConfiguration) -> EndpointReadiness {
+        EndpointReadiness.resolve(
+            enabled: endpoint.enabled,
+            checking: inspectingEndpointIDs.contains(endpoint.id),
+            hasCredential: hasToken(for: endpoint.id),
+            inspection: inspections[endpoint.id]
+        )
     }
 
     func copyGatewayURL() {
@@ -1250,7 +1265,7 @@ final class AppModel: ObservableObject {
                 modelListPath: modelPath,
                 authentication: .bearer
             )
-        case .openAI:
+        case .openAI, .openRouter, .lmStudio:
             let basePath = parsedBasePath.isEmpty ? "/v1" : parsedBasePath
             return APIEndpointConfiguration(
                 id: id,

@@ -123,7 +123,7 @@ final class AppLifecycleController: NSObject, NSApplicationDelegate, NSWindowDel
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !terminationRequested else { return .terminateNow }
+        guard !terminationRequested else { return .terminateLater }
         if !terminationApproved, dirtyDrafts.hasUnsavedChanges {
             // A menu-bar quit can arrive while the app is hidden. Bring the
             // editor back so the save decision is never stranded off-screen.

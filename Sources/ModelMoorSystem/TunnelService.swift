@@ -14,6 +14,7 @@ public actor TunnelService {
     private let localPortPreflight: @Sendable (TunnelConfiguration) throws -> Void
     private let statusHandler: StatusHandler
     private var tasks: [UUID: Task<Void, Never>] = [:]
+    private var stoppingTasks: [UUID: (id: UUID, task: Task<Void, Never>)] = [:]
     private var runningConfigurations: [UUID: TunnelConfiguration] = [:]
     private var desiredConfigurations: [UUID: TunnelConfiguration] = [:]
     private var runtimePauseReason: String?
@@ -41,6 +42,9 @@ public actor TunnelService {
 
     private func startRunning(_ tunnel: TunnelConfiguration) async {
         await stopRunning(tunnel.id)
+        guard runtimePauseReason == nil,
+              desiredConfigurations[tunnel.id] == tunnel,
+              tasks[tunnel.id] == nil else { return }
         let task = Task { [weak self] in
             guard let self else { return }
             await self.runLoop(tunnel)
@@ -77,6 +81,13 @@ public actor TunnelService {
     }
 
     private func stopRunning(_ id: UUID) async {
+        if let stopping = stoppingTasks[id] {
+            await stopping.task.value
+            if stoppingTasks[id]?.id == stopping.id {
+                stoppingTasks[id] = nil
+            }
+            return
+        }
         let task = tasks[id]
         if task != nil {
             statusHandler(TunnelStatus(
@@ -88,7 +99,13 @@ public actor TunnelService {
         task?.cancel()
         tasks[id] = nil
         runningConfigurations[id] = nil
-        await task?.value
+        guard let task else { return }
+        let stopID = UUID()
+        stoppingTasks[id] = (stopID, task)
+        await task.value
+        if stoppingTasks[id]?.id == stopID {
+            stoppingTasks[id] = nil
+        }
     }
 
     public func stopAll() async {
@@ -97,14 +114,12 @@ public actor TunnelService {
     }
 
     private func stopAllRunning() async {
-        let running = Array(tasks.values)
-        for task in running {
+        let ids = Set(tasks.keys).union(stoppingTasks.keys)
+        for task in tasks.values {
             task.cancel()
         }
-        tasks.removeAll()
-        runningConfigurations.removeAll()
-        for task in running {
-            await task.value
+        for id in ids {
+            await stopRunning(id)
         }
     }
 
@@ -380,6 +395,7 @@ public actor TunnelService {
         _ = try? await SSHProcess.run(commandBuilder.controlCommand(.cancel, for: tunnel))
         _ = try? await SSHProcess.run(commandBuilder.controlCommand(.exit, for: tunnel))
         process.terminate()
+        _ = await process.waitForExit()
         removeControlSocket(for: tunnel)
     }
 
@@ -445,6 +461,16 @@ public actor TunnelService {
                 )
             }
             defer { close(descriptor) }
+            var reuseAddress: Int32 = 1
+            guard setsockopt(
+                descriptor, SOL_SOCKET, SO_REUSEADDR,
+                &reuseAddress, socklen_t(MemoryLayout<Int32>.size)
+            ) == 0 else {
+                throw TunnelPreflightFailure(
+                    detail: "Could not check local port \(mapping.listenPort): \(String(cString: strerror(errno)))",
+                    category: .unknown
+                )
+            }
             var address = sockaddr_in()
             #if canImport(Darwin)
             address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)

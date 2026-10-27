@@ -109,6 +109,7 @@ struct GeneralSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .textSelection(.enabled)
         .navigationTitle("Settings")
     }
 
@@ -133,10 +134,7 @@ struct GeneralSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(displayPath(url))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+            CopyableText(value: url.path)
         }
         .padding(.vertical, 2)
     }
