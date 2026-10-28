@@ -127,6 +127,24 @@ struct SSHConnectionDetailView: View {
         .accessibilityElement(children: .contain)
     }
 
+    @ViewBuilder
+    private func discoveryStatus(_ mappingID: UUID) -> some View {
+        if model.discoveringMappingIDs.contains(mappingID) {
+            Text("Detecting API…").font(.caption).foregroundStyle(.secondary)
+        } else if model.status(for: connectionID).phase != .connected {
+            Text("Connect SSH to detect the API").font(.caption).foregroundStyle(.secondary)
+        } else if let result = model.mappingDiscoveries[mappingID] {
+            if result.inspection.classification == .llmAPI {
+                Label(result.endpoint.kind == .ollama ? "Ollama API detected" : "OpenAI-compatible API detected", systemImage: "checkmark.circle")
+                    .font(.caption).foregroundStyle(.green)
+            } else if result.inspection.statusCode == 401 || result.inspection.statusCode == 403 {
+                Text("Authentication required").font(.caption).foregroundStyle(.orange)
+            } else {
+                Text("LLM API not detected").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private func basics(_ connection: Binding<TunnelConfiguration>) -> some View {
         Section("Basics") {
             TextField("Name", text: connection.name)
@@ -201,8 +219,23 @@ struct SSHConnectionDetailView: View {
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
+                        if mapping.wrappedValue.direction == .local, mapping.wrappedValue.enabled {
+                            discoveryStatus(mapping.wrappedValue.id)
+                        }
                     }
                     Spacer()
+                    if mapping.wrappedValue.direction == .local, endpointUsing(mapping.wrappedValue.id) == nil {
+                        Button {
+                            model.preferredEndpointMappingID = mapping.wrappedValue.id
+                            model.requestAddEndpoint()
+                        } label: {
+                            Image(systemName: "arrow.down.to.line")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Import as API Endpoint")
+                        .accessibilityLabel("Import as API Endpoint")
+                        .disabled(isDirty || !mapping.wrappedValue.enabled)
+                    }
                     Button("Edit…") {
                         forwardEditor = ForwardEditorContext(
                             mapping: mapping.wrappedValue,

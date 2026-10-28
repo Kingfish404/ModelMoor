@@ -116,6 +116,8 @@
 	<string>要求身份验证时，必须至少保留一个已启用的密钥。</string>
 	<key>Authentication</key>
 	<string>身份验证</string>
+	<key>Authentication required</key>
+	<string>需要认证</string>
 	<key>Automatically check for updates</key>
 	<string>自动检查更新</string>
 	<key>Back</key>
@@ -196,6 +198,8 @@
 	<string>连接</string>
 	<key>Connect All</key>
 	<string>全部连接</string>
+	<key>Connect SSH to detect the API</key>
+	<string>连接 SSH 后识别 API</string>
 	<key>Connect Selected</key>
 	<string>连接所选项目</string>
 	<key>Connect Subscription</key>
@@ -214,6 +218,8 @@
 	<string>登录时连接</string>
 	<key>Connect your first API</key>
 	<string>连接第一个 API</string>
+	<key>Connected</key>
+	<string>已连接</string>
 	<key>Connection</key>
 	<string>连接</string>
 	<key>Connection timeout</key>
@@ -312,6 +318,8 @@
 	<string>要删除此 API 密钥吗？</string>
 	<key>Delete this SSH connection?</key>
 	<string>要删除此 SSH 连接吗？</string>
+	<key>Detecting API…</key>
+	<string>正在识别 API…</string>
 	<key>Diagnostic URL</key>
 	<string>诊断 URL</string>
 	<key>Diagnostics and Privacy</key>
@@ -380,6 +388,8 @@
 	<string>端点类型</string>
 	<key>Enter model ID manually</key>
 	<string>手动输入模型 ID</string>
+	<key>Existing SSH port</key>
+	<string>现有 SSH 端口</string>
 	<key>Expand Others</key>
 	<string>展开其他项目</string>
 	<key>Expose selected models through one authenticated local API.</key>
@@ -408,6 +418,8 @@
 	<string>主机</string>
 	<key>Idle</key>
 	<string>空闲</string>
+	<key>Import as API Endpoint</key>
+	<string>导入为 API 端点</string>
 	<key>In progress</key>
 	<string>进行中</string>
 	<key>In use, saved in the private secrets file</key>
@@ -424,6 +436,8 @@
 	<string>端点 URL 无效</string>
 	<key>Keepalive interval</key>
 	<string>保活间隔</string>
+	<key>LLM API not detected</key>
+	<string>未识别到大模型 API</string>
 	<key>Last checked</key>
 	<string>上次检查</string>
 	<key>Last checked %@</key>
@@ -554,6 +568,8 @@
 	<string>尚未选择模型</string>
 	<key>No unified models</key>
 	<string>没有统一模型</string>
+	<key>No unused local SSH forwards</key>
+	<string>没有可导入的本地 SSH 转发</string>
 	<key>Not Now</key>
 	<string>稍后</string>
 	<key>Not accepted</key>
@@ -564,6 +580,8 @@
 	<string>好</string>
 	<key>Off</key>
 	<string>关</string>
+	<key>Ollama API detected</key>
+	<string>已识别 Ollama API</string>
 	<key>On</key>
 	<string>开</string>
 	<key>One local URL for the models you choose.</key>
@@ -578,6 +596,8 @@
 	<string>打开登录页面</string>
 	<key>Open the %@ folder in Finder</key>
 	<string>在访达中打开 %@ 文件夹</string>
+	<key>OpenAI-compatible API detected</key>
+	<string>已识别 OpenAI 兼容 API</string>
 	<key>Opens API endpoint details</key>
 	<string>打开 API 端点详情</string>
 	<key>Others</key>
@@ -591,6 +611,8 @@
 	<key>Port</key>
 	<string>端口</string>
 	<key>Port Forwards</key>
+	<string>端口转发</string>
+	<key>Port forward</key>
 	<string>端口转发</string>
 	<key>Port forward type</key>
 	<string>端口转发类型</string>
@@ -738,6 +760,8 @@
 	<string>未找到 SSH 连接</string>
 	<key>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</key>
 	<string>SSH 连接、端点、路由和网关设置；架构备份保存在同一文件夹中。</string>
+	<key>SSH port is no longer available for import</key>
+	<string>此 SSH 端口已不可导入，请重新选择</string>
 	<key>Save</key>
 	<string>保存</string>
 	<key>Save Port Forward</key>
@@ -752,6 +776,8 @@
 	<string>搜索模型</string>
 	<key>Secrets File</key>
 	<string>密钥文件</string>
+	<key>Select a port forward</key>
+	<string>选择端口转发</string>
 	<key>Select visible</key>
 	<string>选择当前结果</string>
 	<key>Selected only</key>

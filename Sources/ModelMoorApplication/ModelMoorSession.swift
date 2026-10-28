@@ -484,9 +484,40 @@ public actor ModelMoorSession {
         let cleanSecret = secret?.trimmingCharacters(in: .whitespacesAndNewlines)
         return await inspector.inspect(
             endpoint,
-            mappings: [:],
+            mappings: Dictionary(uniqueKeysWithValues: snapshot.configuration.tunnels.flatMap(\.mappings).map { ($0.id, $0) }),
             secret: cleanSecret?.isEmpty == false ? cleanSecret : nil
         )
+    }
+
+    public func discoverAPI(forMapping mappingID: UUID) async -> SSHMappingAPIDiscovery? {
+        guard let tunnel = snapshot.configuration.tunnels.first(where: { $0.mappings.contains { $0.id == mappingID } }),
+              snapshot.tunnelStatuses[tunnel.id]?.phase == .connected,
+              snapshot.tunnelStatuses[tunnel.id]?.activeMappingIDs?.contains(mappingID) != false,
+              let mapping = tunnel.mappings.first(where: { $0.id == mappingID }),
+              mapping.enabled, mapping.direction == .local else { return nil }
+        let mappings = [mappingID: mapping]
+        let candidates = [
+            APIEndpointConfiguration(name: mapping.name, source: .sshMapping(mappingID: mappingID, originScheme: .http)),
+            APIEndpointConfiguration(
+                name: mapping.name, source: .sshMapping(mappingID: mappingID, originScheme: .http),
+                kind: .ollama, basePath: "", healthPath: "/api/tags", modelListPath: "/api/tags"
+            )
+        ]
+        var fallback: SSHMappingAPIDiscovery?
+        for endpoint in candidates {
+            guard !Task.isCancelled else { return nil }
+            let inspection = await inspector.inspect(endpoint, mappings: mappings, secret: nil)
+            guard !Task.isCancelled,
+                  snapshot.configuration.tunnels.contains(tunnel),
+                  snapshot.tunnelStatuses[tunnel.id]?.phase == .connected,
+                  snapshot.tunnelStatuses[tunnel.id]?.activeMappingIDs?.contains(mappingID) != false else { return nil }
+            let result = SSHMappingAPIDiscovery(endpoint: endpoint, inspection: inspection)
+            if inspection.classification == .llmAPI { return result }
+            if fallback == nil || inspection.statusCode == 401 || inspection.statusCode == 403 {
+                fallback = result
+            }
+        }
+        return fallback
     }
 
     public func inspectEndpoint(_ endpointID: UUID) async {
@@ -544,13 +575,10 @@ public actor ModelMoorSession {
     }
 
     private func performEndpointInspectionBatch() async {
-        let connectedTunnelIDs = Set(snapshot.tunnelStatuses.values.compactMap { status in
-            status.phase == .connected ? status.tunnelID : nil
+        let connectedMappingIDs = Set(snapshot.configuration.tunnels.flatMap { tunnel -> [UUID] in
+            guard let status = snapshot.tunnelStatuses[tunnel.id], status.phase == .connected else { return [] }
+            return tunnel.enabledMappings.map(\.id).filter { status.activeMappingIDs?.contains($0) != false }
         })
-        let connectedMappingIDs = Set(snapshot.configuration.tunnels.lazy
-            .filter { connectedTunnelIDs.contains($0.id) }
-            .flatMap(\.mappings)
-            .map(\.id))
         let mappings = Dictionary(
             uniqueKeysWithValues: snapshot.configuration.tunnels
                 .flatMap(\.mappings).map { ($0.id, $0) }
@@ -911,7 +939,8 @@ public actor ModelMoorSession {
             let gatewayAPIKeys = try nonInteractiveSecretStore.enabledGatewayAPIKeys(for: configuration.gateway)
             let secrets = nonInteractiveSecretStore.endpointSecrets(for: configuration)
             let connectedMappings = Set(configuration.tunnels.compactMap { tunnel -> [UUID]? in
-                snapshot.tunnelStatuses[tunnel.id]?.phase == .connected ? tunnel.enabledMappings.map(\.id) : nil
+                guard let status = snapshot.tunnelStatuses[tunnel.id], status.phase == .connected else { return nil }
+                return tunnel.enabledMappings.map(\.id).filter { status.activeMappingIDs?.contains($0) != false }
             }.flatMap { $0 })
             let subscriptionRouting = try await subscriptionRoutingCredentials()
             guard ownership != nil, runtimeStopTask == nil, !runtimeSuspended else { return }

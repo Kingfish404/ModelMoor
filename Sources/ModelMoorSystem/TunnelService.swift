@@ -17,6 +17,7 @@ public actor TunnelService {
     private var stoppingTasks: [UUID: (id: UUID, task: Task<Void, Never>)] = [:]
     private var runningConfigurations: [UUID: TunnelConfiguration] = [:]
     private var desiredConfigurations: [UUID: TunnelConfiguration] = [:]
+    private var connectedTunnelIDs: Set<UUID> = []
     private var runtimePauseReason: String?
 
     public init(
@@ -61,7 +62,16 @@ public actor TunnelService {
         let desired = Dictionary(uniqueKeysWithValues: tunnels.map { ($0.id, $0) })
         desiredConfigurations = desired
         let idsToStop = runningConfigurations.compactMap { id, current in
-            desired[id] == current ? nil : id
+            if let updated = desired[id], connectedTunnelIDs.contains(id),
+               Self.canAppendMappings(from: current, to: updated) {
+                return nil as UUID?
+            }
+            return desired[id] == current ? nil : id
+        }
+        for tunnel in tunnels where connectedTunnelIDs.contains(tunnel.id) {
+            if let current = runningConfigurations[tunnel.id], Self.canAppendMappings(from: current, to: tunnel) {
+                runningConfigurations[tunnel.id] = tunnel
+            }
         }
         for id in idsToStop {
             await stopRunning(id)
@@ -78,6 +88,13 @@ public actor TunnelService {
     public func stop(_ id: UUID) async {
         desiredConfigurations[id] = nil
         await stopRunning(id)
+    }
+
+    static func canAppendMappings(from current: TunnelConfiguration, to updated: TunnelConfiguration) -> Bool {
+        var baseline = updated
+        baseline.mappings = current.mappings
+        return baseline == current
+            && current.mappings.allSatisfy { updated.mappings.contains($0) }
     }
 
     private func stopRunning(_ id: UUID) async {
@@ -147,8 +164,10 @@ public actor TunnelService {
     }
 
     private func runLoop(_ tunnel: TunnelConfiguration) async {
+        var tunnel = tunnel
         var attempt = 0
         while !Task.isCancelled {
+            tunnel = runningConfigurations[tunnel.id] ?? tunnel
             attempt += 1
             statusHandler(TunnelStatus(
                 tunnelID: tunnel.id,
@@ -265,16 +284,50 @@ public actor TunnelService {
             }
 
             connected = true
+            connectedTunnelIDs.insert(tunnel.id)
             connectedAt = Date()
             statusHandler(TunnelStatus(
                 tunnelID: tunnel.id,
                 phase: .connected,
-                message: connectedMessage(for: tunnel)
+                message: connectedMessage(for: tunnel),
+                activeMappingIDs: Set(tunnel.enabledMappings.map(\.id))
             ))
 
+            var appliedTunnel = tunnel
+            var nextAdditionAttempt = Date.distantPast
             while process.isRunning {
                 try Task.checkCancellation()
                 try await Task.sleep(for: .seconds(1))
+                try Task.checkCancellation()
+                if let updated = runningConfigurations[tunnel.id], updated != appliedTunnel,
+                   Self.canAppendMappings(from: appliedTunnel, to: updated), Date() >= nextAdditionAttempt {
+                    var additions = updated
+                    additions.mappings = updated.enabledMappings.filter { mapping in
+                        !appliedTunnel.mappings.contains(where: { $0.id == mapping.id })
+                    }
+                    do {
+                        let installed = try await installAdditionalMappings(additions)
+                        forwardingTunnel.mappings.append(contentsOf: installed.tunnel.mappings)
+                        relays.append(contentsOf: installed.relays)
+                        appliedTunnel = updated
+                        try Task.checkCancellation()
+                        statusHandler(TunnelStatus(
+                            tunnelID: tunnel.id, phase: .connected, message: connectedMessage(for: updated),
+                            activeMappingIDs: Set(updated.enabledMappings.map(\.id))
+                        ))
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        try Task.checkCancellation()
+                        nextAdditionAttempt = Date().addingTimeInterval(5)
+                        statusHandler(TunnelStatus(
+                            tunnelID: tunnel.id, phase: .connected,
+                            message: "\(connectedMessage(for: appliedTunnel)). Could not add port forwards: \(error.localizedDescription). Retrying in 5s",
+                            failureCategory: (error as? TunnelPreflightFailure)?.category ?? (error as? SSHSessionFailure)?.category ?? .unknown,
+                            activeMappingIDs: Set(appliedTunnel.enabledMappings.map(\.id))
+                        ))
+                    }
+                }
                 let now = Date()
                 if now.timeIntervalSince(lastSample) >= 5 {
                     await recordTraffic(relays, tunnelID: tunnel.id, at: now)
@@ -294,6 +347,7 @@ public actor TunnelService {
                 category: SSHFailureDetail.category(for: tunnel, errorText: process.errorText, default: .processExited)
             )
         } catch {
+            connectedTunnelIDs.remove(tunnel.id)
             for (_, relay) in relays { await relay.stop() }
             await recordTraffic(relays, tunnelID: tunnel.id, at: Date())
             await closeMaster(for: forwardingTunnel, process: process)
@@ -306,6 +360,66 @@ public actor TunnelService {
             if connected {
                 throw SSHSessionFailure(detail: error.localizedDescription, resetBackoff: false, category: .unknown)
             }
+            throw error
+        }
+    }
+
+    private func installAdditionalMappings(_ tunnel: TunnelConfiguration) async throws -> (tunnel: TunnelConfiguration, relays: [(UUID, ForwardTrafficRelay)]) {
+        try localPortPreflight(tunnel)
+        var installed = tunnel
+        installed.mappings = []
+        var relays: [(UUID, ForwardTrafficRelay)] = []
+        do {
+            for mapping in tunnel.enabledMappings {
+                try Task.checkCancellation()
+                var forward = tunnel
+                forward.mappings = [mapping]
+                if dataUsageStore != nil {
+                    let relay = ForwardTrafficRelay()
+                    relays.append((mapping.id, relay))
+                    if mapping.direction.listensLocally {
+                        let reservation = ForwardTrafficRelay()
+                        try await reservation.start(port: 0, destinationHost: "127.0.0.1", destinationPort: 1, inboundIsSent: true)
+                        let internalPort = reservation.port
+                        await reservation.stop()
+                        forward.mappings[0].listenHost = "127.0.0.1"
+                        forward.mappings[0].listenPort = internalPort
+                        try await relay.start(port: mapping.listenPort, destinationHost: "127.0.0.1", destinationPort: internalPort, inboundIsSent: true)
+                    } else {
+                        var policy: RemoteForwardPolicy?
+                        if mapping.direction == .reverseDynamic {
+                            let effective = try await SSHProcess.runCapturingBothStreams(SSHCommand(
+                                executableURL: commandBuilder.executableURL, arguments: ["-G", tunnel.sshHost]
+                            ))
+                            guard effective.terminationStatus == 0 else { throw RemoteForwardPolicy.PolicyError.unavailable }
+                            policy = try RemoteForwardPolicy(effectiveConfiguration: effective.errorText)
+                        }
+                        try await relay.start(port: 0, destinationHost: mapping.destinationHost, destinationPort: mapping.destinationPort, inboundIsSent: false, socks: mapping.direction == .reverseDynamic, remotePolicy: policy)
+                        forward.mappings[0].direction = .remote
+                        forward.mappings[0].destinationHost = "127.0.0.1"
+                        forward.mappings[0].destinationPort = relay.port
+                    }
+                }
+                let result = try await SSHProcess.run(commandBuilder.controlCommand(.forward, for: forward))
+                guard result.terminationStatus == 0 else {
+                    throw SSHSessionFailure(
+                        detail: result.errorText.isEmpty ? "SSH forwarding setup exited with code \(result.terminationStatus)" : SSHFailureDetail.message(for: tunnel, errorText: result.errorText),
+                        resetBackoff: false,
+                        category: SSHFailureDetail.category(for: tunnel, errorText: result.errorText)
+                    )
+                }
+                installed.mappings.append(contentsOf: forward.mappings)
+            }
+            try Task.checkCancellation()
+            return (installed, relays)
+        } catch {
+            for mapping in installed.mappings {
+                var cancel = installed
+                cancel.mappings = [mapping]
+                _ = try? await SSHProcess.run(commandBuilder.controlCommand(.cancel, for: cancel))
+            }
+            for (_, relay) in relays { await relay.stop() }
+            await recordTraffic(relays, tunnelID: tunnel.id, at: Date())
             throw error
         }
     }

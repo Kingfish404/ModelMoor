@@ -116,6 +116,8 @@
 	<string>At least one key must stay enabled while authentication is required.</string>
 	<key>Authentication</key>
 	<string>Authentication</string>
+	<key>Authentication required</key>
+	<string>Authentication required</string>
 	<key>Automatically check for updates</key>
 	<string>Automatically check for updates</string>
 	<key>Back</key>
@@ -196,6 +198,8 @@
 	<string>Connect</string>
 	<key>Connect All</key>
 	<string>Connect All</string>
+	<key>Connect SSH to detect the API</key>
+	<string>Connect SSH to detect the API</string>
 	<key>Connect Selected</key>
 	<string>Connect Selected</string>
 	<key>Connect Subscription</key>
@@ -214,6 +218,8 @@
 	<string>Connect at login</string>
 	<key>Connect your first API</key>
 	<string>Connect your first API</string>
+	<key>Connected</key>
+	<string>Connected</string>
 	<key>Connection</key>
 	<string>Connection</string>
 	<key>Connection timeout</key>
@@ -312,6 +318,8 @@
 	<string>Delete this API key?</string>
 	<key>Delete this SSH connection?</key>
 	<string>Delete this SSH connection?</string>
+	<key>Detecting API…</key>
+	<string>Detecting API…</string>
 	<key>Diagnostic URL</key>
 	<string>Diagnostic URL</string>
 	<key>Diagnostics and Privacy</key>
@@ -380,6 +388,8 @@
 	<string>Endpoint type</string>
 	<key>Enter model ID manually</key>
 	<string>Enter model ID manually</string>
+	<key>Existing SSH port</key>
+	<string>Existing SSH port</string>
 	<key>Expand Others</key>
 	<string>Expand Others</string>
 	<key>Expose selected models through one authenticated local API.</key>
@@ -408,6 +418,8 @@
 	<string>Host</string>
 	<key>Idle</key>
 	<string>Idle</string>
+	<key>Import as API Endpoint</key>
+	<string>Import as API Endpoint</string>
 	<key>In progress</key>
 	<string>In progress</string>
 	<key>In use, saved in the private secrets file</key>
@@ -424,6 +436,8 @@
 	<string>Invalid endpoint URL</string>
 	<key>Keepalive interval</key>
 	<string>Keepalive interval</string>
+	<key>LLM API not detected</key>
+	<string>LLM API not detected</string>
 	<key>Last checked</key>
 	<string>Last checked</string>
 	<key>Last checked %@</key>
@@ -554,6 +568,8 @@
 	<string>No selected models</string>
 	<key>No unified models</key>
 	<string>No unified models</string>
+	<key>No unused local SSH forwards</key>
+	<string>No unused local SSH forwards</string>
 	<key>Not Now</key>
 	<string>Not Now</string>
 	<key>Not accepted</key>
@@ -564,6 +580,8 @@
 	<string>OK</string>
 	<key>Off</key>
 	<string>Off</string>
+	<key>Ollama API detected</key>
+	<string>Ollama API detected</string>
 	<key>On</key>
 	<string>On</string>
 	<key>One local URL for the models you choose.</key>
@@ -578,6 +596,8 @@
 	<string>Open sign-in page</string>
 	<key>Open the %@ folder in Finder</key>
 	<string>Open the %@ folder in Finder</string>
+	<key>OpenAI-compatible API detected</key>
+	<string>OpenAI-compatible API detected</string>
 	<key>Opens API endpoint details</key>
 	<string>Opens API endpoint details</string>
 	<key>Others</key>
@@ -592,6 +612,8 @@
 	<string>Port</string>
 	<key>Port Forwards</key>
 	<string>Port Forwards</string>
+	<key>Port forward</key>
+	<string>Port forward</string>
 	<key>Port forward type</key>
 	<string>Port forward type</string>
 	<key>Preset</key>
@@ -738,6 +760,8 @@
 	<string>SSH connection not found</string>
 	<key>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</key>
 	<string>SSH connections, endpoints, routes, and gateway settings. Schema backups are kept in the same folder.</string>
+	<key>SSH port is no longer available for import</key>
+	<string>SSH port is no longer available for import</string>
 	<key>Save</key>
 	<string>Save</string>
 	<key>Save Port Forward</key>
@@ -752,6 +776,8 @@
 	<string>Search models</string>
 	<key>Secrets File</key>
 	<string>Secrets File</string>
+	<key>Select a port forward</key>
+	<string>Select a port forward</string>
 	<key>Select visible</key>
 	<string>Select visible</string>
 	<key>Selected only</key>

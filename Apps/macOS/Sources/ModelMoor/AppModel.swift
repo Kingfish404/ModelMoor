@@ -46,6 +46,12 @@ final class AppModel: ObservableObject {
     @Published var lastSavedAt: Date?
     @Published var navigationRequest: NavigationSelection?
     @Published var addEndpointRequest = 0
+    @Published var preferredEndpointMappingID: UUID?
+    @Published private(set) var mappingDiscoveries: [UUID: SSHMappingAPIDiscovery] = [:]
+    @Published private(set) var discoveringMappingIDs: Set<UUID> = []
+    private var discoveryInputs: [UUID: TunnelConfiguration] = [:]
+    private var discoveryTasks: [UUID: Task<Void, Never>] = [:]
+    private var importingMappingIDs: Set<UUID> = []
     @Published var addSSHConnectionRequest = 0
     @Published var preferredModelEndpointID: UUID?
     @Published private(set) var isUpdatingGatewayAccess = false
@@ -126,6 +132,7 @@ final class AppModel: ObservableObject {
     }
 
     private func applySnapshot(_ snapshot: AppSnapshot) {
+        defer { synchronizeMappingDiscovery() }
         if snapshot.configuration != lastSnapshotConfiguration {
             lastSnapshotConfiguration = snapshot.configuration
             isApplyingSnapshotConfiguration = true
@@ -521,11 +528,117 @@ final class AppModel: ObservableObject {
 
     func inspectMappings(in tunnelID: UUID) async {
         guard let tunnel = configuration.tunnels.first(where: { $0.id == tunnelID }) else { return }
+        discoveryTasks.removeValue(forKey: tunnelID)?.cancel()
+        for mapping in tunnel.mappings {
+            mappingDiscoveries[mapping.id] = nil
+            discoveringMappingIDs.remove(mapping.id)
+        }
+        discoveryInputs[tunnelID] = nil
+        synchronizeMappingDiscovery()
         let mappingIDs = Set(tunnel.mappings.map(\.id))
         for endpoint in configuration.endpoints where endpoint.enabled {
             guard case let .sshMapping(mappingID, _) = endpoint.source, mappingIDs.contains(mappingID) else { continue }
             await inspectEndpoint(endpoint.id)
         }
+    }
+
+    var importableSSHPorts: [(tunnel: TunnelConfiguration, mapping: PortMappingConfiguration)] {
+        let used = Set(configuration.endpoints.compactMap { endpoint -> UUID? in
+            guard case let .sshMapping(mappingID, _) = endpoint.source else { return nil }
+            return mappingID
+        })
+        return configuration.tunnels.flatMap { tunnel in
+            tunnel.mappings.filter { $0.enabled && $0.direction == .local && !used.contains($0.id) }
+                .map { (tunnel: tunnel, mapping: $0) }
+        }
+    }
+
+    private func synchronizeMappingDiscovery() {
+        let connected = configuration.tunnels.filter { statuses[$0.id]?.phase == .connected }.map { tunnel in
+            var active = tunnel
+            active.mappings = tunnel.mappings.filter { statuses[tunnel.id]?.activeMappingIDs?.contains($0.id) != false }
+            return active
+        }
+        let connectedIDs = Set(connected.map(\.id))
+        for id in Array(discoveryInputs.keys) where !connectedIDs.contains(id) {
+            discoveryTasks.removeValue(forKey: id)?.cancel()
+            if let previous = discoveryInputs.removeValue(forKey: id) {
+                for mapping in previous.mappings {
+                    mappingDiscoveries[mapping.id] = nil
+                    discoveringMappingIDs.remove(mapping.id)
+                }
+            }
+        }
+        for tunnel in connected where discoveryInputs[tunnel.id] != tunnel {
+            discoveryTasks[tunnel.id]?.cancel()
+            if let previous = discoveryInputs[tunnel.id] {
+                for mapping in previous.mappings {
+                    mappingDiscoveries[mapping.id] = nil
+                    discoveringMappingIDs.remove(mapping.id)
+                }
+            }
+            discoveryInputs[tunnel.id] = tunnel
+            let mappings = tunnel.enabledMappings.filter { $0.direction == .local }
+            discoveringMappingIDs.formUnion(mappings.map(\.id))
+            discoveryTasks[tunnel.id] = Task { [weak self] in
+                guard let self else { return }
+                for mapping in mappings {
+                    let result = await session.discoverAPI(forMapping: mapping.id)
+                    guard !Task.isCancelled, discoveryInputs[tunnel.id] == tunnel else { return }
+                    mappingDiscoveries[mapping.id] = result
+                    discoveringMappingIDs.remove(mapping.id)
+                }
+                discoveryTasks[tunnel.id] = nil
+            }
+        }
+    }
+
+    func importSSHPort(mappingID: UUID, name: String, preset: EndpointPreset, token: String) async -> UUID? {
+        guard importingMappingIDs.insert(mappingID).inserted else { return nil }
+        defer { importingMappingIDs.remove(mappingID) }
+        guard let port = importableSSHPorts.first(where: { $0.mapping.id == mappingID }) else {
+            errorMessage = AppLocalization.string("SSH port is no longer available for import")
+            return nil
+        }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        var endpoint = makeEndpoint(
+            id: UUID(), name: cleanName.isEmpty ? port.mapping.name : cleanName,
+            source: .sshMapping(mappingID: mappingID, originScheme: .http), preset: preset
+        )
+        if secret.isEmpty {
+            endpoint.authentication = .none
+            endpoint.apiKeys = []
+            endpoint.activeAPIKeyID = nil
+        } else {
+            endpoint.authentication = .bearer
+            endpoint.apiKeys = [EndpointAPIKeyConfiguration(id: endpoint.id, name: "Default key")]
+            endpoint.activeAPIKeyID = endpoint.id
+        }
+        do {
+            try await session.addEndpoint(endpoint, secret: secret.isEmpty ? nil : secret)
+            await syncFromSession()
+            lastSavedAt = Date()
+            errorMessage = nil
+            navigationRequest = .endpoint(endpoint.id)
+            if status(for: port.tunnel.id).phase == .connected { await inspectEndpoint(endpoint.id) }
+            return endpoint.id
+        } catch {
+            errorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func testSSHPort(mappingID: UUID, preset: EndpointPreset, token: String) async -> EndpointInspection {
+        var endpoint = makeEndpoint(
+            id: UUID(), name: "API", source: .sshMapping(mappingID: mappingID, originScheme: .http), preset: preset
+        )
+        if !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { endpoint.authentication = .bearer }
+        var inspection = await session.inspectTemporaryEndpoint(endpoint, secret: token)
+        if endpoint.kind.isLLMAPI, inspection.classification != .llmAPI, inspection.errorMessage == nil {
+            inspection.errorMessage = AppLocalization.string("LLM API not detected")
+        }
+        return inspection
     }
 
     func inspectEndpoint(_ endpointID: UUID) async {
@@ -1121,6 +1234,9 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() async {
+        discoveryTasks.values.forEach { $0.cancel() }
+        discoveryTasks.removeAll()
+        discoveryInputs.removeAll()
         usageRefreshTask?.cancel()
         usageRefreshTask = nil
         isUIRefreshActive = false

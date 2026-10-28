@@ -31,6 +31,12 @@ Mac API    127.0.0.1:18888
 
 This is useful for self-hosted vLLM, SGLang, Ollama, or other services that should remain private on the remote machine. ModelMoor manages the SSH process, connection recovery, API health, model discovery, and the local endpoint URL.
 
+To reuse an existing forward, choose **Add API Endpoint > Existing SSH port**, or use **Import as API Endpoint** on a port in SSH connection details. Importing creates an endpoint linked to the existing mapping without creating another tunnel or changing its ports. Choose the API preset and enter a bearer key when needed; disconnected forwards can be imported and checked after connecting.
+
+Adding mappings to a connected SSH configuration reuses its existing SSH master and keeps existing forwards open. Additions are picked up on the next runtime check (normally within one second, plus SSH setup time). If a new port is occupied or SSH rejects an addition, ModelMoor rolls back that batch of additions, keeps existing forwards active, and retries every five seconds. Pending mappings are excluded from automatic API checks and Unified API routing until installation succeeds. Editing or removing existing mappings, or changing other connection settings, still reconnects the tunnel.
+
+When an SSH connection becomes connected, the macOS app automatically checks enabled fixed local forwards using read-only requests to `/v1/models` and `/api/tags`. A valid model list identifies an OpenAI-compatible or Ollama API; authentication responses remain unconfirmed until tested with credentials. SOCKS and remote forwards are excluded. Use **Run Diagnostics** to retry detection after starting a remote service. APIs using HTTPS or nonstandard paths require manual endpoint configuration; an unrecognized port is not proof that no LLM API is present.
+
 ### 2. Aggregate remote and commercial APIs locally
 
 Add models from SSH-hosted endpoints and direct HTTP(S) providers, then assign each one a stable public model name in the Unified API:

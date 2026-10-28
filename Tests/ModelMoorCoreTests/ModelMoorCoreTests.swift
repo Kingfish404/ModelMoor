@@ -851,12 +851,26 @@ final class ModelMoorCoreTests: XCTestCase {
         await service.reconcile([changedFirst, second])
         let firstReconnected = await waitForPhase(.connected, tunnelID: first.id, minimumCount: 2, in: recorder)
         XCTAssertTrue(firstReconnected)
+        changedFirst.mappings.append(PortMappingConfiguration(listenPort: 18_904))
+        await service.reconcile([changedFirst, second])
+        let appended = await waitForPhase(.connected, tunnelID: first.id, minimumCount: 3, in: recorder)
+        XCTAssertTrue(appended)
+        changedFirst.mappings[0].destinationPort = 9_001
+        await service.reconcile([changedFirst, second])
+        let edited = await waitForPhase(.connected, tunnelID: first.id, minimumCount: 4, in: recorder)
+        XCTAssertTrue(edited)
+        changedFirst.mappings.removeLast()
+        await service.reconcile([changedFirst, second])
+        let removed = await waitForPhase(.connected, tunnelID: first.id, minimumCount: 5, in: recorder)
+        XCTAssertTrue(removed)
+        let latest = await recorder.statuses.last { $0.tunnelID == first.id && $0.phase == .connected }
+        XCTAssertEqual(latest?.activeMappingIDs, Set(changedFirst.enabledMappings.map(\.id)))
         await service.stopAll()
 
         let events = (try? String(contentsOf: eventsURL, encoding: .utf8))?
             .split(whereSeparator: \.isNewline)
             .map(String.init) ?? []
-        XCTAssertEqual(events.filter { $0 == "master:\(builder.controlPath(for: first))" }.count, 2)
+        XCTAssertEqual(events.filter { $0 == "master:\(builder.controlPath(for: first))" }.count, 4)
         XCTAssertEqual(events.filter { $0 == "master:\(builder.controlPath(for: second))" }.count, 1)
     }
 
@@ -904,6 +918,109 @@ final class ModelMoorCoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: control))
         XCTAssertFalse(FileManager.default.fileExists(atPath: "\(control).ready"))
         await stoppingAgain.value
+    }
+
+    func testAddingMappingsKeepsMasterAndExistingListenersWithTrafficAccounting() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ModelMoorHotAdd-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executableURL = directory.appendingPathComponent("fake-ssh")
+        let eventsURL = directory.appendingPathComponent("events")
+        try writeFakeSSH(executableURL: executableURL, eventsURL: eventsURL)
+        let reservations = [ForwardTrafficRelay(), ForwardTrafficRelay()]
+        for relay in reservations {
+            try await relay.start(port: 0, destinationHost: "127.0.0.1", destinationPort: 1, inboundIsSent: true)
+        }
+        let original = PortMappingConfiguration(name: "Original", listenPort: reservations[0].port)
+        let added = PortMappingConfiguration(name: "Added", listenPort: reservations[1].port)
+        for relay in reservations { await relay.stop() }
+        let tunnel = TunnelConfiguration(name: "Hot add", sshHost: "test", mappings: [original])
+        let recorder = TunnelStatusRecorder()
+        let preflights = MappingPreflightRecorder()
+        let service = TunnelService(
+            commandBuilder: SSHCommandBuilder(executableURL: executableURL, controlDirectoryURL: directory.appendingPathComponent("control")),
+            dataUsageStore: DataUsageStore(directoryURL: directory.appendingPathComponent("usage")),
+            localPortPreflight: { configuration in
+                preflights.append(configuration.enabledMappings.map(\.id))
+                try TunnelService.systemLocalPortPreflight(for: configuration)
+            }
+        ) { status in Task { await recorder.append(status) } }
+        await service.start(tunnel)
+        let connected = await waitForPhase(.connected, tunnelID: tunnel.id, in: recorder)
+        XCTAssertTrue(connected)
+        var updated = tunnel
+        updated.mappings.append(added)
+        await service.reconcile([updated])
+        let addedSuccessfully = await waitForPhase(.connected, tunnelID: tunnel.id, minimumCount: 2, in: recorder)
+        XCTAssertTrue(addedSuccessfully)
+        XCTAssertEqual(preflights.values, [[original.id], [added.id]])
+        let events = try String(contentsOf: eventsURL, encoding: .utf8).split(whereSeparator: \.isNewline)
+        XCTAssertEqual(events.filter { $0.hasPrefix("master:") }.count, 1)
+        XCTAssertEqual(events.filter { $0.hasPrefix("forward:") }.count, 2)
+        XCTAssertFalse(events.contains { $0.hasPrefix("cancel:") || $0.hasPrefix("exit:") })
+        let phases = await recorder.phases
+        XCTAssertFalse(phases.contains(.disconnecting))
+        XCTAssertFalse(phases.contains(.waitingToRetry))
+        for mapping in updated.mappings {
+            var probe = tunnel
+            probe.mappings = [mapping]
+            XCTAssertThrowsError(try TunnelService.systemLocalPortPreflight(for: probe))
+        }
+        let blocker = ForwardTrafficRelay()
+        try await blocker.start(port: 0, destinationHost: "127.0.0.1", destinationPort: 1, inboundIsSent: true)
+        let blocked = PortMappingConfiguration(name: "Occupied", listenPort: blocker.port)
+        updated.mappings.append(blocked)
+        await service.reconcile([updated])
+        let conflictReported = await waitForPhase(.connected, tunnelID: tunnel.id, minimumCount: 3, in: recorder)
+        XCTAssertTrue(conflictReported)
+        let conflict = await recorder.statuses.last
+        XCTAssertEqual(conflict?.failureCategory, .localPortInUse)
+        XCTAssertEqual(conflict?.activeMappingIDs, Set([original.id, added.id]))
+        await blocker.stop()
+        let recovered = await waitForPhase(.connected, tunnelID: tunnel.id, minimumCount: 4, in: recorder, attempts: 160)
+        XCTAssertTrue(recovered)
+        let recoveredStatus = await recorder.statuses.last
+        XCTAssertEqual(recoveredStatus?.activeMappingIDs, Set(updated.enabledMappings.map(\.id)))
+        XCTAssertNil(recoveredStatus?.failureCategory)
+        let finalEvents = try String(contentsOf: eventsURL, encoding: .utf8).split(whereSeparator: \.isNewline)
+        XCTAssertEqual(finalEvents.filter { $0.hasPrefix("master:") }.count, 1)
+        XCTAssertFalse(finalEvents.contains { $0.hasPrefix("cancel:") || $0.hasPrefix("exit:") })
+        await service.stopAll()
+        XCTAssertNoThrow(try TunnelService.systemLocalPortPreflight(for: updated))
+    }
+
+    func testFailedAdditionalBatchRollsBackWithoutClosingMaster() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ModelMoorHotAddFailure-\(UUID())")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executableURL = directory.appendingPathComponent("fake-ssh")
+        let eventsURL = directory.appendingPathComponent("events")
+        try writeFakeSSH(executableURL: executableURL, eventsURL: eventsURL, failForwardNumber: 3)
+        let tunnel = TunnelConfiguration(name: "Hot add", sshHost: "test", mappings: [PortMappingConfiguration(name: "Original", listenPort: 19_201)])
+        let recorder = TunnelStatusRecorder()
+        let service = TunnelService(commandBuilder: SSHCommandBuilder(
+            executableURL: executableURL, controlDirectoryURL: directory.appendingPathComponent("control")
+        ), localPortPreflight: { _ in }) { status in Task { await recorder.append(status) } }
+        await service.start(tunnel)
+        let connected = await waitForPhase(.connected, tunnelID: tunnel.id, in: recorder)
+        XCTAssertTrue(connected)
+        var updated = tunnel
+        updated.mappings += [
+            PortMappingConfiguration(name: "Added", listenPort: 19_202),
+            PortMappingConfiguration(name: "Rejected", listenPort: 19_203)
+        ]
+        await service.reconcile([updated])
+        let reported = await waitForPhase(.connected, tunnelID: tunnel.id, minimumCount: 2, in: recorder)
+        XCTAssertTrue(reported)
+        let statuses = await recorder.statuses
+        XCTAssertTrue(statuses.contains { $0.message.contains("Could not add port forwards") })
+        XCTAssertEqual(statuses.last?.activeMappingIDs, Set(tunnel.enabledMappings.map(\.id)))
+        XCTAssertFalse(statuses.contains { $0.phase == .disconnecting || $0.phase == .waitingToRetry })
+        let events = try String(contentsOf: eventsURL, encoding: .utf8).split(whereSeparator: \.isNewline)
+        XCTAssertEqual(events.filter { $0.hasPrefix("master:") }.count, 1)
+        XCTAssertEqual(events.filter { $0.hasPrefix("cancel:") }.count, 1)
+        XCTAssertFalse(events.contains { $0.hasPrefix("exit:") })
+        await service.stopAll()
     }
 
     func testUnexpectedMasterExitReconnectsWithoutUserAction() async throws {
@@ -2146,11 +2263,19 @@ private func waitForPhase(
     return false
 }
 
+private final class MappingPreflightRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [[UUID]] = []
+    func append(_ ids: [UUID]) { lock.withLock { recorded.append(ids) } }
+    var values: [[UUID]] { lock.withLock { recorded } }
+}
+
 private func writeFakeSSH(
     executableURL: URL,
     eventsURL: URL,
     exitMasterAfter lifetime: Double? = nil,
-    shutdownDelay: Double = 0
+    shutdownDelay: Double = 0,
+    failForwardNumber: Int = 0
 ) throws {
     let masterBody: String
     if let lifetime {
@@ -2174,7 +2299,14 @@ private func writeFakeSSH(
     ready="${control}.ready"
     case "$operation" in
       check) [ -f "$ready" ]; exit $? ;;
-      forward) echo "forward:$control" >> "\(eventsURL.path)"; exit 0 ;;
+            forward)
+                echo "forward:$control" >> "\(eventsURL.path)"
+                count=$(grep -c '^forward:' "\(eventsURL.path)")
+                if [ "$count" -eq "\(failForwardNumber)" ]; then
+                    echo "forwarding request failed" >&2
+                    exit 1
+                fi
+                exit 0 ;;
       cancel) echo "cancel:$control" >> "\(eventsURL.path)"; exit 0 ;;
       exit)
         if [ -f "$ready" ]; then

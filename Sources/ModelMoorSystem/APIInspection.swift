@@ -83,6 +83,16 @@ public protocol APIInspecting: Sendable {
     ) async -> EndpointInspection
 }
 
+public struct SSHMappingAPIDiscovery: Equatable, Sendable {
+    public var endpoint: APIEndpointConfiguration
+    public var inspection: EndpointInspection
+
+    public init(endpoint: APIEndpointConfiguration, inspection: EndpointInspection) {
+        self.endpoint = endpoint
+        self.inspection = inspection
+    }
+}
+
 public struct APIInspector: APIInspecting, Sendable {
     public var timeout: TimeInterval
 

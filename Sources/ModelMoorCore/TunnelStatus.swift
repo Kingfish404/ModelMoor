@@ -37,6 +37,7 @@ public struct TunnelStatus: Equatable, Sendable {
     public var retryAttempt: Int
     public var changedAt: Date
     public var failureCategory: TunnelFailureCategory?
+    public var activeMappingIDs: Set<UUID>?
 
     public init(
         tunnelID: UUID,
@@ -46,12 +47,26 @@ public struct TunnelStatus: Equatable, Sendable {
         changedAt: Date = Date(),
         failureCategory: TunnelFailureCategory? = nil
     ) {
+        self.init(tunnelID: tunnelID, phase: phase, message: message, retryAttempt: retryAttempt,
+                  changedAt: changedAt, failureCategory: failureCategory, activeMappingIDs: nil)
+    }
+
+    public init(
+        tunnelID: UUID,
+        phase: TunnelPhase,
+        message: String,
+        retryAttempt: Int = 0,
+        changedAt: Date = Date(),
+        failureCategory: TunnelFailureCategory? = nil,
+        activeMappingIDs: Set<UUID>?
+    ) {
         self.tunnelID = tunnelID
         self.phase = phase
         self.message = message
         self.retryAttempt = retryAttempt
         self.changedAt = changedAt
         self.failureCategory = failureCategory
+        self.activeMappingIDs = activeMappingIDs
     }
 }
 

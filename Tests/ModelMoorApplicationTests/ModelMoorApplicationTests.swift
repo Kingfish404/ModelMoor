@@ -11,6 +11,74 @@ import XCTest
 import ModelMoorCore
 
 final class ModelMoorApplicationTests: XCTestCase {
+    func testSSHPortDiscoveryAndImportReuseExistingMapping() async throws {
+        for kind in [APIEndpointKind.openAICompatible, .ollama] {
+            let inspector = MappingDiscoveryInspector(recognizedKind: kind)
+            let (session, directory) = try makeSession(inspector: inspector)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            try await session.load()
+            let mapping = PortMappingConfiguration(name: "Model server", listenPort: 19_777)
+            let tunnel = TunnelConfiguration(name: "Lab", sshHost: "lab", mappings: [mapping])
+            var configuration = await session.snapshot.configuration
+            configuration.tunnels = [tunnel]
+            configuration.gateway.enabled = false
+            try await session.saveConfiguration(configuration)
+            await session.setDiscoveryTestStatus(tunnelID: tunnel.id, phase: .connected)
+            let discovered = await session.discoverAPI(forMapping: mapping.id)
+            let result = try XCTUnwrap(discovered)
+            XCTAssertEqual(result.endpoint.kind, kind)
+            XCTAssertEqual(result.inspection.classification, .llmAPI)
+            XCTAssertEqual(result.inspection.url?.port, mapping.listenPort)
+            XCTAssertEqual(result.inspection.models?.first?.id, "discovered-model")
+            try await session.addEndpoint(result.endpoint, secret: nil)
+            let saved = await session.snapshot.configuration
+            XCTAssertEqual(saved.tunnels, [tunnel])
+            XCTAssertTrue(saved.endpoints.contains(result.endpoint))
+            XCTAssertEqual(result.endpoint.source, .sshMapping(mappingID: mapping.id, originScheme: .http))
+            let temporary = await session.inspectTemporaryEndpoint(result.endpoint, secret: nil)
+            XCTAssertEqual(temporary.url?.port, mapping.listenPort)
+        }
+    }
+
+    func testSSHDiscoveryDoesNotGuessFromAuthenticationOrProbeDisconnectedAndDynamicPorts() async throws {
+        let inspector = MappingDiscoveryInspector(recognizedKind: nil)
+        let (session, directory) = try makeSession(inspector: inspector)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try await session.load()
+        let local = PortMappingConfiguration(name: "Private", listenPort: 19_778)
+        let dynamic = PortMappingConfiguration(name: "SOCKS", direction: .dynamic, listenPort: 19_779)
+        let tunnel = TunnelConfiguration(name: "Lab", sshHost: "lab", mappings: [local, dynamic])
+        var configuration = await session.snapshot.configuration
+        configuration.tunnels = [tunnel]
+        configuration.gateway.enabled = false
+        try await session.saveConfiguration(configuration)
+        let disconnected = await session.discoverAPI(forMapping: local.id)
+        XCTAssertNil(disconnected)
+        await session.setDiscoveryTestStatus(tunnelID: tunnel.id, phase: .connected)
+        let proxy = await session.discoverAPI(forMapping: dynamic.id)
+        XCTAssertNil(proxy)
+        let initialCalls = await inspector.calls
+        XCTAssertEqual(initialCalls, 0)
+        let result = await session.discoverAPI(forMapping: local.id)
+        XCTAssertEqual(result?.inspection.statusCode, 401)
+        XCTAssertEqual(result?.inspection.classification, .unknown)
+        let calls = await inspector.calls
+        XCTAssertEqual(calls, 2)
+        let endpoint = APIEndpointConfiguration(name: "Pending", source: .sshMapping(mappingID: local.id, originScheme: .http))
+        try await session.addEndpoint(endpoint, secret: nil)
+        await session.setDiscoveryTestStatus(tunnelID: tunnel.id, phase: .connected, activeMappingIDs: [dynamic.id])
+        let pending = await session.discoverAPI(forMapping: local.id)
+        XCTAssertNil(pending)
+        let callsBeforeRefresh = await inspector.calls
+        await session.inspectAllEndpoints()
+        let callsAfterRefresh = await inspector.calls
+        XCTAssertEqual(callsAfterRefresh, callsBeforeRefresh)
+        await session.setDiscoveryTestStatus(tunnelID: tunnel.id, phase: .connected, activeMappingIDs: [local.id, dynamic.id])
+        await session.inspectAllEndpoints()
+        let callsAfterActivation = await inspector.calls
+        XCTAssertEqual(callsAfterActivation, callsBeforeRefresh + 1)
+    }
+
     func testReloadConfigurationImportsAliasWithoutRewritingDiskAndRejectsInvalidData() async throws {
         let (session, directory) = try makeSession()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -668,6 +736,31 @@ final class ModelMoorApplicationTests: XCTestCase {
             port: 18_317
         ))
         XCTAssertThrowsError(try configuration.validated())
+    }
+}
+
+private extension ModelMoorSession {
+    func setDiscoveryTestStatus(tunnelID: UUID, phase: TunnelPhase, activeMappingIDs: Set<UUID>? = nil) {
+        snapshot.tunnelStatuses[tunnelID] = TunnelStatus(tunnelID: tunnelID, phase: phase, message: "Test", activeMappingIDs: activeMappingIDs)
+    }
+}
+
+private actor MappingDiscoveryInspector: APIInspecting {
+    let recognizedKind: APIEndpointKind?
+    private(set) var calls = 0
+
+    init(recognizedKind: APIEndpointKind?) { self.recognizedKind = recognizedKind }
+
+    func inspect(_ endpoint: APIEndpointConfiguration, mappings: [UUID: PortMappingConfiguration], secret: String?) async -> EndpointInspection {
+        calls += 1
+        let recognized = endpoint.kind == recognizedKind
+        return EndpointInspection(
+            endpointID: endpoint.id,
+            url: try? EndpointURLResolver.resolve(endpoint, path: endpoint.modelListPath, mappings: mappings),
+            statusCode: recognized ? 200 : (recognizedKind == nil ? 401 : 404),
+            models: recognized ? [RemoteModelMetadata(id: "discovered-model")] : nil,
+            classification: recognized ? .llmAPI : .unknown
+        )
     }
 }
 

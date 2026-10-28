@@ -368,6 +368,7 @@ final class DirtyWindowCloseCoordinator {
 
 enum EndpointSourceChoice: String, CaseIterable, Identifiable {
     case ssh
+    case existingSSH
     case direct
 
     var id: Self { self }

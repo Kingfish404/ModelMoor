@@ -17,6 +17,7 @@ struct AddEndpointFlow: View {
     @State private var isTesting = false
     @State private var isCreating = false
     @State private var creationError: String?
+    @State private var selectedMappingID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,11 +51,25 @@ struct AddEndpointFlow: View {
         .frame(width: 620, height: 500)
         .onAppear {
             sshHost = sshHost.isEmpty ? (model.sshTargets.first?.alias ?? "") : sshHost
+            if let mappingID = model.preferredEndpointMappingID {
+                source = .existingSSH
+                selectedMappingID = mappingID
+                model.preferredEndpointMappingID = nil
+                step = 1
+                useDiscoveredPreset()
+            } else {
+                selectedMappingID = model.importableSSHPorts.first?.mapping.id
+            }
         }
         .interactiveDismissDisabled(isTesting || isCreating)
         .onChange(of: source) { _, value in
-            if value == .ssh, !availablePresets.contains(preset) { preset = .openAI }
+            if value != .direct, !availablePresets.contains(preset) { preset = .openAI }
             if value == .direct, baseURL.isEmpty { baseURL = preset.defaultBaseURL }
+            if value == .existingSSH { useDiscoveredPreset() }
+        }
+        .onChange(of: selectedMappingID) { _, _ in
+            inspection = nil
+            useDiscoveredPreset()
         }
     }
 
@@ -63,14 +78,16 @@ struct AddEndpointFlow: View {
             Text("Where is the API running?").font(.headline)
             Picker("Source", selection: $source) {
                 Label("Remote over SSH", systemImage: "network").tag(EndpointSourceChoice.ssh)
+                Label("Existing SSH port", systemImage: "arrow.down.to.line").tag(EndpointSourceChoice.existingSSH)
                 Label("Direct HTTP(S) API", systemImage: "globe").tag(EndpointSourceChoice.direct)
             }
             .pickerStyle(.radioGroup)
-            Text(source == .ssh
+            if source != .existingSSH { Text(source == .ssh
                  ? "ModelMoor creates a loopback port forward and keeps the SSH connection available in the background."
                  : "Use a commercial or self-hosted HTTP or HTTPS endpoint that this Mac can reach directly.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -82,6 +99,7 @@ struct AddEndpointFlow: View {
                     ForEach(availablePresets) { preset in Text(preset.title).tag(preset) }
                 }
                 .onChange(of: preset) { previous, value in
+                    inspection = nil
                     guard source == .direct else { return }
                     if name.isEmpty || name == previous.title { name = value.title }
                     if baseURL.isEmpty || baseURL == previous.defaultBaseURL {
@@ -114,6 +132,22 @@ struct AddEndpointFlow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            } else if source == .existingSSH {
+                Section("Existing SSH port") {
+                    Picker("Port forward", selection: $selectedMappingID) {
+                        Text("Select a port forward").tag(nil as UUID?)
+                        ForEach(model.importableSSHPorts, id: \.mapping.id) { port in
+                            Text(verbatim: "\(port.tunnel.name) · \(port.mapping.name) · 127.0.0.1:\(port.mapping.listenPort)")
+                                .tag(Optional(port.mapping.id))
+                        }
+                    }
+                    if model.importableSSHPorts.isEmpty {
+                        Text("No unused local SSH forwards").foregroundStyle(.secondary)
+                    } else if let port = selectedPort {
+                        Text(model.status(for: port.tunnel.id).phase == .connected ? "Connected" : "Connect SSH to detect the API")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             } else {
                 Section("Direct Connection") {
                     TextField(
@@ -128,7 +162,7 @@ struct AddEndpointFlow: View {
                 }
             }
 
-            if source == .ssh && preset.usesBearerAuthentication {
+            if source != .direct && (preset.usesBearerAuthentication || source == .existingSSH) {
                 Section("Authentication") {
                     SecureField("Bearer API key, optional", text: $token)
                 }
@@ -150,6 +184,8 @@ struct AddEndpointFlow: View {
                     detail: "Checked immediately after the SSH connection starts",
                     color: .secondary
                 )
+            } else if source == .existingSSH && !canTestSelectedPort {
+                Text("Connect SSH to detect the API").foregroundStyle(.secondary)
             } else if isTesting {
                 HStack(spacing: 10) {
                     ProgressView().controlSize(.small)
@@ -196,22 +232,22 @@ struct AddEndpointFlow: View {
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(step == 1 && !detailsAreValid)
-            } else if source == .direct && inspection == nil {
+            } else if source != .ssh && inspection == nil && (source == .direct || canTestSelectedPort) {
                 Button("Test Endpoint", action: testDirect)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(isTesting)
-            } else if source == .direct, inspection?.errorMessage != nil {
+            } else if source != .ssh, inspection?.errorMessage != nil {
                 Button("Retry Test", action: testDirect)
                     .disabled(isTesting)
                 Button("Create Anyway", action: create)
                     .buttonStyle(.borderedProminent)
-                    .disabled(isCreating)
+                    .disabled(isCreating || !detailsAreValid)
             } else {
                 Button("Create Endpoint", action: create)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isCreating)
+                    .disabled(isCreating || !detailsAreValid)
             }
         }
         .padding(16)
@@ -226,6 +262,7 @@ struct AddEndpointFlow: View {
     }
 
     private var detailsAreValid: Bool {
+        if source == .existingSSH { return selectedPort != nil }
         if source == .ssh { return !sshHost.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (1...65_535).contains(remotePort) }
         let validURL = (try? EndpointURLResolver.parseDirectBaseURL(baseURL)) != nil
         return validURL && (![EndpointPreset.deepSeek, .openRouter].contains(preset) || !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -239,8 +276,30 @@ struct AddEndpointFlow: View {
         isTesting = true
         inspection = nil
         Task {
-            inspection = await model.testDirectEndpoint(name: name, baseURL: baseURL, preset: preset, token: token)
+            if source == .existingSSH, let selectedMappingID {
+                inspection = await model.testSSHPort(mappingID: selectedMappingID, preset: preset, token: token)
+            } else {
+                inspection = await model.testDirectEndpoint(name: name, baseURL: baseURL, preset: preset, token: token)
+            }
             isTesting = false
+        }
+    }
+
+    private var selectedPort: (tunnel: TunnelConfiguration, mapping: PortMappingConfiguration)? {
+        model.importableSSHPorts.first { $0.mapping.id == selectedMappingID }
+    }
+
+    private var canTestSelectedPort: Bool {
+        guard let port = selectedPort else { return false }
+        return model.status(for: port.tunnel.id).phase == .connected
+    }
+
+    private func useDiscoveredPreset() {
+        guard source == .existingSSH, let port = selectedPort else { return }
+        name = port.mapping.name
+        preset = .openAI
+        if let discovery = model.mappingDiscoveries[port.mapping.id], discovery.inspection.classification == .llmAPI {
+            preset = discovery.endpoint.kind == .ollama ? .ollama : .openAI
         }
     }
 
@@ -258,6 +317,8 @@ struct AddEndpointFlow: View {
                     preset: preset,
                     token: token
                 )
+            } else if source == .existingSSH, let selectedMappingID {
+                createdID = await model.importSSHPort(mappingID: selectedMappingID, name: name, preset: preset, token: token)
             } else {
                 createdID = await model.createDirectEndpoint(
                     name: name,
