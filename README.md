@@ -1,290 +1,58 @@
 # ModelMoor
 
-> “If there are several ways of doing the same thing, choose one.”
+ModelMoor is a native macOS menu bar app, CLI, and terminal console for connecting private SSH-hosted and direct HTTP(S) model APIs. Expose selected models through one local **Unified API**, or forward that API to a remote machine over SSH.
 
--- <cite>RFC 1958, *Architectural Principles of the Internet* (1996)</cite>
+- Bring remote services to your Mac with local SSH forwarding; reuse existing forwards as API endpoints.
+- Give models stable public aliases behind `http://127.0.0.1:17777/v1`, with separate upstream credentials and streaming responses.
+- Connect supported subscription accounts and inspect model, token, and SSH data usage.
 
-ModelMoor is a native macOS menu bar app and CLI for moving OpenAI-compatible APIs across SSH boundaries and collecting selected models behind one stable local endpoint. It can bring a remote API to your Mac, aggregate SSH-hosted and commercial HTTPS APIs through the authenticated Unified API at `http://127.0.0.1:17777/v1`, and reverse-forward that local Unified API to a remote server when remote tools need to use it.
+ModelMoor is single-user and loopback-only. It uses system OpenSSH, stores credentials separately from configuration, and has no telemetry or ModelMoor cloud account. Routing is exact, without fallback, load balancing, or inference retries.
 
-## Three core workflows
+## Get started
 
-### Per-model budgets
+Download from [GitHub Releases](https://github.com/Kingfish404/ModelMoor/releases/latest). The macOS app requires macOS 14 or later; Linux CLI/TUI archives support Ubuntu 22.04 and 24.04.
 
-In Unified API, use the sliders button next to a model to set independent daily, weekly and monthly token and USD amount limits. Every limit is off by default; enabled limits can be edited or disabled independently. Amount limits require explicit input and output prices in USD per million tokens (zero is valid for free models).
-
-Budgets use UTC calendar days, ISO weeks starting Monday, and calendar months. Reached limits produce warnings only: models remain listed in `/v1/models` and requests continue upstream. The upstream API determines whether requests can still be served. Counters survive restarts in `model-budgets.json` beside the runtime token usage file; production and development profiles remain separate.
-
-Accounting uses standard OpenAI-compatible response `usage` fields, including Chat Completions SSE and Responses API input/output tokens. Budgeted streaming chat requests enable `stream_options.include_usage`. Costs are local estimates at the configured prices when usage is recorded, not provider invoices: cached-token discounts, tools and other non-token charges are not inferred. There is no universal OpenAI-compatible per-model balance-query API. Only requests passing through this runtime are counted, and historical spending before pricing was configured is not reconstructed.
-
-Usage is recorded as responses finish; budgets are local estimates, not prepaid reservations or provider-side spending caps. Missing usage and unreadable or unwritable budget storage produce warnings without blocking requests. Removing all limits does not erase counters.
-
-### 1. Bring a remote API to your Mac
-
-Use local SSH port forwarding (`ssh -L`) to turn an API running on a remote server into a stable loopback endpoint on your Mac:
-
-```text
-Remote API 127.0.0.1:8888
-  | SSH local forward
-  v
-Mac API    127.0.0.1:18888
-```
-
-This is useful for self-hosted vLLM, SGLang, Ollama, or other services that should remain private on the remote machine. ModelMoor manages the SSH process, connection recovery, API health, model discovery, and the local endpoint URL.
-
-To reuse an existing forward, choose **Add API Endpoint > Existing SSH port**, or use **Import as API Endpoint** on a port in SSH connection details. Importing creates an endpoint linked to the existing mapping without creating another tunnel or changing its ports. Choose the API preset and enter a bearer key when needed; disconnected forwards can be imported and checked after connecting.
-
-Adding mappings to a connected SSH configuration reuses its existing SSH master and keeps existing forwards open. Additions are picked up on the next runtime check (normally within one second, plus SSH setup time). If a new port is occupied or SSH rejects an addition, ModelMoor rolls back that batch of additions, keeps existing forwards active, and retries every five seconds. Pending mappings are excluded from automatic API checks and Unified API routing until installation succeeds. Editing or removing existing mappings, or changing other connection settings, still reconnects the tunnel.
-
-When an SSH connection becomes connected, the macOS app automatically checks enabled fixed local forwards using read-only requests to `/v1/models` and `/api/tags`. A valid model list identifies an OpenAI-compatible or Ollama API; authentication responses remain unconfirmed until tested with credentials. SOCKS and remote forwards are excluded. Use **Run Diagnostics** to retry detection after starting a remote service. APIs using HTTPS or nonstandard paths require manual endpoint configuration; an unrecognized port is not proof that no LLM API is present.
-
-### 2. Aggregate remote and commercial APIs locally
-
-Add models from SSH-hosted endpoints and direct HTTP(S) providers, then assign each one a stable public model name in the Unified API:
-
-```text
-SSH-hosted APIs --+
-                  +--> ModelMoor Unified API --> http://127.0.0.1:17777/v1
-Commercial APIs --+
-```
-
-Local clients keep one base URL and one ModelMoor API key. ModelMoor routes each public model name to its exact upstream endpoint, replaces the local credential with that endpoint's file-backed credential, and transparently streams the response. It does not perform fallback, load balancing, or inference retries.
-
-### 3. Make the local Unified API available on a remote server
-
-Some tools run on a remote development or compute server but still need the models collected on your Mac. Use remote SSH port forwarding (`ssh -R`) to carry the local Unified API back through the existing SSH connection:
-
-```text
-Mac Unified API 127.0.0.1:17777
-  | SSH remote forward
-  v
-Remote API      127.0.0.1:17777
-```
-
-Create the forward with the CLI:
-
-```bash
-.build/release/modelmoor add remote-unified-api my-ssh-host \
-  --direction remote \
-  --listen-port 17777 \
-  --destination-port 17777
-```
-
-Or add a **Remote port forwarding (-R)** mapping to the SSH connection in the app. A client running on `my-ssh-host` can then use:
+1. Choose **Add API Endpoint** and select a direct HTTP(S) API, a new SSH connection, or an existing SSH port. Test and save it.
+2. Open **Unified API**, enable it, and choose **Add Models**. Select models and assign the public names clients will use.
+3. Copy an enabled key from **API access**. Under **Connect a client**, copy the base URL and a request example.
 
 ```text
 Base URL: http://127.0.0.1:17777/v1
-API key:  <an enabled ModelMoor Unified API key beginning with sk->
+API key:  <your ModelMoor Unified API key>
+Model:    <your public model name>
 ```
 
-The Mac must keep ModelMoor and the SSH connection running. Both listeners remain bound to loopback, so this makes the API available to processes on the selected remote host without exposing it to the remote LAN or the public internet.
+Each endpoint can also be used directly. For Ollama through Unified API, use its OpenAI-compatible `/v1` endpoint; the native Ollama preset is for discovery.
 
-## Features
+## CLI and TUI
 
-- Discovers SSH targets from `~/.ssh/config` and its recursive `Include` files
-- One Mooring uses one SSH process and carries multiple `ssh -L` and `ssh -R` mappings at once
-- Models SSH forwarding as a transport and API endpoints separately
-- Keeps non-LLM forwarded services in a collapsed **Others** sidebar group instead of reporting API warnings
-- Supports direct HTTP(S) OpenAI-compatible endpoints such as DeepSeek, with one file-backed secret per endpoint
-- Signs in to ChatGPT/Codex and Claude directly, and to Kimi Code and Grok Build through device flows in temporary isolated profiles; credentials are stored in ModelMoor's private secret store without reading or changing local agent credentials
-- Routes Codex Responses natively and text-only Claude, Kimi Code and Grok chat through their genuine provider CLIs
-- Discovers OpenAI-compatible and Ollama models and reports endpoint health independently from SSH state
-- Searches SSH connections, endpoints, forwarded services, and discovered model IDs directly from the macOS sidebar
-- Offers direct connection presets for DeepSeek, OpenAI-compatible APIs, OpenRouter, LM Studio, and Ollama, preserving custom URLs when switching presets
-- Searches discovered and unified models, selects filtered results in bulk, and keeps selections while refreshing model discovery
-- Generates copyable client environment and streaming request examples using the configured port and public model alias, including Responses requests for native Codex subscriptions
-- Localizes critical macOS navigation, commands, status, settings, and update flows in English and Simplified Chinese
-- Routes stable public model aliases to exact upstream models without fallback, load balancing, or inference retries
-- Serves a loopback-only `/v1/models`, with optional multi-key bearer authentication, and streams OpenAI-compatible responses, including SSE
-- Provides a dedicated Usage panel with time, model, and endpoint filters, a token trend chart, and per-model breakdowns
-- Checks GitHub Releases for updates from Settings, the menu bar, or the application menu
-
-## Configure the Unified API
-
-Open the ModelMoor main window and:
-
-1. Add a direct endpoint using a provider preset, or connect an API over SSH. Test the endpoint and create it.
-2. Open **Unified API** and choose **Enable Unified API**.
-3. Choose **Add Models**, select a source endpoint, and search or select the visible results. Set public aliases such as `deepseek-fast` for `deepseek-v4-flash`.
-4. Keep **Require API key** on for protected access, then copy an enabled key from **API access**. Add separate keys for different clients when useful.
-5. Under **Connect a client**, copy the base URL environment variable and set `OPENAI_API_KEY` to the copied key. Select a public model and copy its streaming request example.
-
-In **Add Models**, select discovered models or enter an upstream model ID manually, then edit **Public name** to choose the alias clients will request. Use the pencil button beside an existing Unified API model to change its alias without changing its upstream model, route identity, or budgets. For example, clients can request `deepseek-fast` while ModelMoor forwards `deepseek-v4-flash` upstream. The model list exposes the public alias; clients using an old alias must update after it is renamed.
-
-Model search accepts multiple terms across model IDs and aliases; the Unified API list also searches endpoint names. **Select visible** adds the current results without clearing previous selections. **Selected only** reviews the selection before saving. Removing a unified model requires confirmation and keeps the upstream model. Request examples contain no stored secrets and use Responses for native Codex routes; other routes use Chat Completions. Ollama's native preset supports discovery; use an OpenAI-compatible endpoint with Ollama's `/v1` URL when exposing its models through Unified API.
-
-After editing the local configuration file, use **Reload Configuration** in the main window toolbar. ModelMoor reads the file and refreshes SSH connections, managed subscriptions, and Unified API routing without writing the previous in-memory configuration back to disk. Existing connection requests are retained for tunnels that still exist. Unapplied form edits trigger the existing apply/discard/cancel prompt; choose discard to load the external file without saving the form first. An invalid configuration leaves the active configuration unchanged and displays an error.
-
-Any OpenAI-compatible local client can then use:
-
-```text
-Base URL: http://127.0.0.1:17777/v1
-API key:  <an enabled ModelMoor Unified API key beginning with sk->
-```
-
-Verify model discovery:
+Run `modelmoor` without arguments to open the terminal console. Use `modelmoor --help` for commands and `help` inside the console.
 
 ```bash
-curl http://127.0.0.1:17777/v1/models \
-  -H "Authorization: Bearer $MODELMOOR_GATEWAY_TOKEN"
+modelmoor init my-ssh-host --name lab \
+  --listen-port 18888 --destination-port 8888 --probe-path /v1/models
+modelmoor run lab
 ```
 
-Send a streaming request. ModelMoor rewrites only the top-level `model`, replaces the local token with the selected endpoint's file-backed credential, and forwards the upstream response:
+The app, CLI runtime, and TUI share one runtime owner lock. On Linux, explicitly enable secret storage with `MODELMOOR_SECRET_BACKEND=file` before saving API keys.
 
-```bash
-curl http://127.0.0.1:17777/v1/chat/completions \
-  -H "Authorization: Bearer $MODELMOOR_GATEWAY_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"deepseek-fast","messages":[{"role":"user","content":"Hello"}],"stream":true}'
-```
+## Build from source
 
-### Use subscription accounts
-
-Open **Subscription** in the sidebar to sign in to ChatGPT/Codex, Claude, Kimi Code, or Grok Build. ModelMoor stores these credentials in its private secret store and never reads or changes a local agent's profile. Codex accounts have a native Responses API route. Claude, Kimi Code and Grok models run through their genuine installed CLIs with tools disabled and isolated temporary profiles; these routes currently accept text-only `/v1/chat/completions` requests. Antigravity subscription login is not supported. Migration removes old CLIProxyAPI settings and endpoints; helper data is retained untouched. After models are discovered, configure the models to expose from **Unified API**.
-
-The native Codex route calls the subscription backend directly. Claude Code receives a ModelMoor-owned OAuth token; Kimi Code and Grok Build receive ModelMoor-managed device-login credentials. Each CLI runs in an isolated temporary home with caller tools disabled. Public clients use only the ModelMoor Unified API URL and its ModelMoor API key.
-
-## Requirements
-
-- macOS 14 or later
-- Xcode 26 / Swift 6.1 or later (for building from source)
-- `rsvg-convert` (`brew install librsvg`) or Inkscape for generating AppIcon PNGs
-- Network access for SwiftPM dependencies and provider sign-in/API calls
-
-## Building and Running
-
-The repository keeps only `Resources/Brand/ModelMoor-AppIcon-Master.svg` as the
-app-icon source. Missing or stale PNG sizes are generated automatically during
-the app build.
+On macOS, install Xcode 26 / Swift 6.1 or later and `librsvg` (`brew install librsvg`) or Inkscape for icon generation, then run:
 
 ```bash
 make run
 ```
 
-`make run` builds and opens the isolated **ModelMoor Dev** app. Its settings, secret files, ports, SSH runtime, usage history, and optional legacy helper data are separate from an installed production version. Use `make app` only when assembling the production-profile app at `.build/app/ModelMoor.app`.
-
-The production build also produces the release CLI and prints its path when done. After moving the production app to `/Applications`, you can enable start at login from the Settings item at the bottom of the ModelMoor sidebar, or press Command-,.
-
-Run `make help` to see all build commands. See [docs/development.md](docs/development.md) for build internals, project layout, and testing.
-
-## CLI
-
-Create a default `-L` mapping:
-
-```bash
-.build/release/modelmoor init localhost \
-  --name dgx-spark \
-  --direction local \
-  --listen-port 18888 \
-  --destination-port 8888 \
-  --probe-path /v1/models
-```
-
-Create an initial `-R` mapping. For example, this exposes the Mac's local Unified API on the SSH server's loopback interface:
-
-```bash
-.build/release/modelmoor add remote-unified-api my-ssh-host \
-  --direction remote \
-  --listen-port 17777 \
-  --destination-port 17777
-```
-
-Create a local SOCKS 4/5 proxy with dynamic port forwarding (`-D`):
-
-```bash
-.build/release/modelmoor add local-socks localhost \
-  --direction dynamic \
-  --listen-port 1080
-```
-
-Create a SOCKS 4/5 proxy on the SSH server with reverse dynamic port forwarding
-(`-R` without a fixed destination):
-
-```bash
-.build/release/modelmoor add remote-socks localhost \
-  --direction reverse-dynamic \
-  --listen-port 1080
-```
-
-The GUI can add more mappings to the same Mooring. The CLI `init` and `add` commands create a single initial mapping.
-
-```text
-modelmoor init SSH_HOST [--name NAME] [options]
-modelmoor add NAME SSH_HOST [options]
-modelmoor list
-modelmoor run [NAME]
-modelmoor probe [ENDPOINT]
-modelmoor endpoint list
-modelmoor endpoint url NAME
-modelmoor endpoint models NAME
-modelmoor url ENDPOINT
-modelmoor models ENDPOINT
-modelmoor route list
-modelmoor gateway url
-modelmoor gateway status
-modelmoor gateway token --copy
-modelmoor ssh-command [NAME]
-modelmoor enable NAME
-modelmoor disable NAME
-modelmoor remove NAME
-modelmoor doctor
-modelmoor config-path
-```
-
-`modelmoor doctor` runs read-only diagnostics over configuration, OpenSSH, SSH transports, endpoints and the Unified API without acquiring the runtime. It prints one tab-separated line per check (`ok`/`warn`/`fail`) and exits with a stable layer code: `0` healthy, `10` configuration, `20` system environment, `30` SSH transport, `40` endpoint authentication, `50` API/protocol, `60` Gateway.
-
-The macOS app also exposes **Copy Diagnostic Summary** from Settings, the Help menu, and the menu-bar menu. This copies the shared bounded runtime event summary; credentials, inference content, and full home-directory paths are redacted.
-
-## TUI
-
-Running `modelmoor` with no subcommand opens the cross-platform terminal console. `--help` and every explicit command remain conventional CLI commands; `modelmoor-tui` remains available as a standalone compatibility executable. The console has Overview, SSH Connections, API Endpoints, Unified API, Subscriptions, Needs Attention, and Settings panes. Use Tab or the mouse to move focus and select rows. Pane text is read-only: the bottom `moor>` shell is the only place to enter commands or modify configuration and runtime state.
-
-The shell supports `add ssh`, `add port`, `add api`, `subs`, `gateway`, `connect [name]`, `disconnect [name]`, `filter <terms>`, `clear-filter`, `refresh`, `status`, and `quit`. Enter `help` in the shell for the full list. `r` refreshes, `?` or F1 opens keyboard help, and `q` quits. The terminal UI always uses ASCII glyphs and borders.
-
-The TUI shares the single runtime owner lock with the GUI and `modelmoor run`; it starts read-only and shows the current owner instead of taking over. When stdin/stdout are not TTYs it prints a stable plain-text snapshot and exits; configuration or startup failures write a `modelmoor-tui:` error to stderr and return a nonzero status.
-
-## Linux
-
-The root package (Core/System/Gateway) and the `modelmoor` CLI build and test on Ubuntu 22.04/24.04; `modelmoor-tui` is cross-platform as well. Paths follow XDG (`~/.config/modelmoor`, `~/.local/share/modelmoor`, `$XDG_RUNTIME_DIR`). On Linux, API keys and Unified API keys are stored only after you explicitly enable the owner-only file secret backend (`MODELMOOR_SECRET_BACKEND=file`, optionally `MODELMOOR_SECRETS_FILE=/path`); without it, reads behave as "no secret" and writes fail with guidance — no silent plaintext downgrade. See docs/development.md for the container-based Linux verification workflow.
-
-For testing or automation, set `MODELMOOR_CONFIG=/path/to/config.json` to avoid modifying the real configuration.
-
-Non-secret configuration is stored in XDG-style files so it can be inspected, backed up, or copied between profiles:
-
-```text
-~/.config/modelmoor/config.json      # production
-~/.config/modelmoor/config.dev.json  # development
-```
-
-`XDG_CONFIG_HOME` replaces `~/.config` when it contains an absolute path. On first launch after upgrading, ModelMoor copies the matching legacy `Application Support` configuration into the new location and leaves the old file unchanged. Copying a configuration between profiles does not copy its file-backed credentials.
-
-## Security Boundaries
-
-On macOS, endpoint API keys and Unified API keys are stored in `~/.config/modelmoor/secrets.json`; development builds use `~/.config/modelmoor-dev/secrets.json`. The containing directory is restricted to `0700` and files to `0600`. `XDG_CONFIG_HOME` overrides `~/.config`; `MODELMOOR_SECRETS_FILE` overrides the full secrets path. `MODELMOOR_CONFIG` changes only the ordinary configuration path, not the secrets path. An explicit secrets override can intentionally share credentials between profiles, so use separate paths for isolation.
-
-The file is UTF-8 JSON with `schemaVersion: 1` and a `secrets` object mapping account identifiers to secret strings. Writes are atomic and protected by a sibling `secrets.json.lock` file. Files with unsafe permissions, a different owner, or a symbolic-link type are rejected. This is plaintext storage protected by filesystem permissions, not encryption: other processes running as your user and administrators can read it. Keep it out of source control, shared folders, and unencrypted backups; configuration exports do not include it.
-
-On macOS, version 0.5.0 uses only the private JSON secrets file. Historical Keychain credentials and migration settings are ignored: no Keychain reads, writes, or imports occur. Existing file credentials remain valid. Re-enter any upstream API keys that exist only in Keychain; copy the current Unified API key to clients if their old key is absent from the file. Old Keychain items are not deleted. Linux retains its explicit file-backend opt-in and existing `~/.local/share/modelmoor/secrets.json` path (or `$XDG_DATA_HOME/modelmoor/secrets.json`).
-
-Direct API endpoints accept both HTTP and HTTPS, including custom ports and base paths. HTTP sends credentials and traffic without encryption; use it only on trusted networks or loopback. Existing configurations retain the `directHTTPS` source identifier for compatibility, even for an HTTP URL.
-
-- SSH passwords, private keys, ProxyJump, and the agent are managed by the system OpenSSH.
-- `BatchMode=yes` prevents background connections from prompting for a password.
-- Local and remote listener addresses only accept `127.0.0.1` or `localhost`.
-- `-R 0.0.0.0:...` and GatewayPorts are not supported yet, to avoid exposing local services to the remote network.
-- Endpoint credentials and Unified API key values are stored only in an owner-only secrets file. Configuration contains only key names, identifiers, and enabled states.
-- Native OAuth access and refresh tokens are stored only in ModelMoor's private secrets file, never in ordinary configuration or local agent files. The Claude runner passes its token to the genuine Claude Code process in its environment, gives it a temporary private home and config directory, disables Claude tools, and removes that directory when the request finishes.
-- Previous versions stored CLIProxyAPI credentials and account files in ModelMoor's private data directories. Current versions do not read or delete those retained files.
-- The Unified API binds only `127.0.0.1`. Bearer authentication is enabled by default, supports multiple independently enabled keys, and can be turned off with an in-app warning. Newly created and rotated keys use the familiar `sk-` prefix. Keys are stored only in the private secrets file. Client credentials are removed before ModelMoor injects only the selected endpoint credential.
-- API inspection only performs GET probes. The Gateway never logs request or response bodies and never retries or falls back to another paid endpoint.
-- Usage history stores only a timestamp, total token count, and internal route/endpoint identifiers. It is based on upstream `usage` fields, so a streaming response is counted only when the upstream includes usage data.
-- Gateway requests are limited to 16 MiB, with no application-level cap on active requests; file, image/audio upload, CORS, and native Anthropic/Gemini protocol translation are intentionally out of scope.
-- Subscription routing depends on each provider's current subscription terms. Native routing currently covers Codex Responses and text-only Claude Code, Kimi Code, and Grok Build chat through their official CLIs. Google Antigravity subscription login is unsupported. Legacy CLIProxyAPI configuration is migrated off and cannot be enabled; old helper files are retained untouched. Consumer subscriptions do not become official metered API entitlements; users remain responsible for provider terms, quotas, and account policy.
+This builds and opens **ModelMoor Dev**, isolated from production settings, credentials, ports, and history. Use `make app` for a production app bundle; `make help` lists other targets.
 
 ## Documentation
 
-- [Development](docs/development.md) - build targets, project layout, and testing.
-- [DGX Spark -> Copilot](docs/dgx-spark-copilot.en.md) ([Chinese](docs/dgx-spark-copilot.zh.md)) - serve Qwen3.8-27B on a DGX Spark with SGLang and connect it to VS Code Copilot.
+- [User guide](docs/usage.md): SSH forwarding, subscriptions, budgets, CLI, configuration, and security.
+- [DGX Spark to VS Code Copilot](docs/dgx-spark-copilot.en.md) / [中文教程](docs/dgx-spark-copilot.zh.md): a complete SGLang setup.
+- [Development](docs/development.md): builds, tests, architecture, and releases.
+- [SSH data accounting](docs/data-usage.md): what byte counts measure and how history is stored.
 
 ## License
 
-The project is released under the MIT License.
+[MIT](LICENSE).

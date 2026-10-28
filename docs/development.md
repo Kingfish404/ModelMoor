@@ -1,253 +1,66 @@
 # Development
 
-Internal notes for building, testing, and extending ModelMoor.
-
-For a user-facing walkthrough of serving Qwen3.8-27B on a DGX Spark and wiring it into VS Code Copilot, see [dgx-spark-copilot.en.md](dgx-spark-copilot.en.md) ([中文](dgx-spark-copilot.zh.md)).
-
-## Requirements
-
-- macOS 14 or later
-- Xcode 26 / Swift 6.1 or later
-- The system OpenSSH client (no bundled SSH implementation)
-
-## Build Commands
-
-All build commands are wrapped by the top-level `Makefile`. Run `make help` for the list.
-
-| Target                    | Description                                                             |
-| ------------------------- | ----------------------------------------------------------------------- |
-| `make app`                | Build the production app bundle and CLI via `Scripts/build-app.sh`      |
-| `make app-dev`            | Build the isolated `ModelMoor Dev` app bundle                           |
-| `make build`              | Alias for `make app`                                                    |
-| `make cli`                | Build the production CLI only (`swift build -c release`)                |
-| `make tui`                | Build the standalone production TUI compatibility executable            |
-| `make debug`              | Build debug binaries                                                    |
-| `make test`               | Run architecture boundaries, then the root test suite                   |
-| `make architecture-check` | Reject forbidden platform, UI, and terminal imports across layers       |
-| `make signing-policy-check` | Limit app builds to one Keychain private-key use                       |
-| `make localization-check` | Verify catalog resources and compiler-extracted GUI key coverage        |
-| `make run`                | Build and open `ModelMoor Dev` (alias for `make run-dev`)               |
-| `make run-release`        | Build and open a production-profile app from `.build`                   |
-| `make run-cli ARGS='...'` | Run the debug CLI with optional arguments                               |
-| `make run-tui ARGS='...'` | Run the debug TUI with optional arguments                               |
-| `make test-root`          | Explicit alias for the root architecture checks and test suite          |
-| `make test-app`           | Run the macOS app package tests                                         |
-| `make test-tui`           | Run the TUI package tests                                               |
-| `make test-cli-signal`    | Verify CLI signal handling and cleanup                                  |
-| `make test-cli-tui-terminal` | Verify default CLI TUI terminal behavior                            |
-| `make test-tui-terminal`  | Verify TUI resize, signal, and terminal restoration behavior            |
-| `make test-all`           | Run all package and terminal integration tests                          |
-| `make install`            | Build and replace `/Applications/ModelMoor.app` with the production app |
-| `make clean`              | Remove build artifacts (`.build/`)                                      |
-
-`make app` produces:
-
-- `.build/app/ModelMoor.app` — the menu bar app bundle
-- `.build/app-dev/ModelMoor Dev.app` — the isolated development app bundle
-- `.build/release/modelmoor` — the CLI binary (path is printed at the end of the build)
-
-## Production and Development Isolation
-
-The app bundle declares a build profile in `Info.plist`. Both profiles use the same compiled Swift executable, but resolve separate runtime resources:
-
-| Resource                 | Production                                | Development                                   |
-| ------------------------ | ----------------------------------------- | --------------------------------------------- |
-| App identity             | `ModelMoor` / `com.modelmoor.app`         | `ModelMoor Dev` / `com.modelmoor.app.dev`     |
-| Non-secret configuration | `~/.config/modelmoor/config.json`         | `~/.config/modelmoor/config.dev.json`         |
-| Application data         | `~/Library/Application Support/ModelMoor` | `~/Library/Application Support/ModelMoor Dev` |
-| Secrets file (macOS)     | `~/.config/modelmoor/secrets.json`         | `~/.config/modelmoor-dev/secrets.json`        |
-| Runtime and SSH controls | `/tmp/modelmoor-UID`                      | `/tmp/modelmoor-dev-UID`                      |
-| Unified API default      | `127.0.0.1:17777`                         | `127.0.0.1:27777`                             |
-
-Development builds disable login launch and update checks. Both macOS profiles use private JSON secret files exclusively. Version 0.5.0 ignores historical Keychain credentials and migration metadata, without reading or deleting Keychain entries. Existing file credentials remain valid; keys stored only in Keychain must be entered again.
-
-`XDG_CONFIG_HOME` replaces `~/.config` when it is an absolute path. `MODELMOOR_CONFIG` overrides ordinary configuration only and disables automatic legacy configuration import. `MODELMOOR_SECRETS_FILE` independently overrides the secrets file; sharing that override also shares secrets across profiles. The Settings page lists the active configuration, retained legacy configuration, usage history, legacy subscription data, app preferences, and secrets file with Finder open actions.
-
-## App Bundle Assembly
-
-`Scripts/build-app.sh` assembles the app bundle on top of `swift build -c release`:
-
-1. Copies the `ModelMoor` binary and `Support/Info.plist` into the bundle.
-2. Builds without downloading or bundling CLIProxyAPI; native Codex, Claude Code, Kimi Code and Grok Build subscription routing does not require the sidecar.
-3. Compiles `Resources/Assets.xcassets` with `actool` (app icon, minimum deployment target 14.0).
-4. Copies the English and Simplified Chinese app localizations into standard `en.lproj` and `zh-Hans.lproj` bundle resources.
-5. Copies SwiftNIO's privacy manifest, the SwiftNIO/CNIOLLHTTP license notices, and the Magpie attribution into the app resources.
-6. Signs the standalone CLI and complete app bundle ad-hoc by default. There is no automatic certificate lookup. Setting `MODELMOOR_CODE_SIGN_IDENTITY` explicitly opts into an alternative identity for the outer app.
-
-Runtime API credentials never access Keychain. Default local builds also require no Keychain access; an explicitly selected signing identity may use its private key during signing.
-
-The build uses `--disable-sandbox`, the `native` SwiftPM backend, and a project-local cache (`.build/cache`, `.build/module-cache`). The `native` backend is deprecated in Swift 6.4 but is still required: SwiftPM's default `swiftbuild` engine cannot build `Apps/macOS` yet (it fails with `error: Multiple commands produce ... en.lproj/Localizable.strings` for the localized sidecars). `Scripts/patch-termkit-swiftpm.sh` excludes SwiftTerm's optional Metal shader from its target, so no backend has to compile it; run that script once after resolving dependencies locally (CI and the release workflow already do). `make run-dev` needs no additional flags. Bundle builds can override the backend with `MODELMOOR_BUILD_SYSTEM`.
-
-`Apps/macOS/Sources/ModelMoor/Resources/Localizable.xcstrings` is the authoritative localization source. SwiftPM command-line builds currently copy that editor catalog instead of compiling it, so the generated `en.lproj` and `zh-Hans.lproj` `Localizable.strings` sidecars remain checked in for runtime compatibility. Run `Scripts/sync-localizations.sh` after editing the catalog. `make localization-check` compiles the catalog with Xcode, compares both sidecars semantically, then uses Swift compiler `.stringsdata` extraction to ensure every static SwiftUI key is present. Technical values and user data must use `Text(verbatim:)` rather than becoming localization keys. Final app assembly copies only the two compiled `.lproj` resources, not the raw catalog.
-
-## Project Layout
-
-```text
-Sources/
-  ModelMoorCore/     Pure domain: configuration schema v5, validation,
-                     migration, cascade rules, diagnostics types, endpoint
-                     routing data, tunnel status. Foundation only — no
-                     Darwin/Glibc, Security, Network, AppKit or SwiftUI.
-  ModelMoorSystem/   Platform adapters: POSIX file/lock IO, atomic writer,
-                     OpenSSH command/process supervision, endpoint inspection
-                     and release checks (URLSession), platform paths (XDG),
-                     secret stores, network monitor, native subscription adapters
-  ModelMoorGateway/  SwiftNIO loopback server, local authentication, exact model
-                     routing, credential isolation, and streaming proxy
-  ModelMoorApplication/  Single business entry point: ModelMoorSession actor,
-                     AppSnapshot (secret-free), DoctorRunner diagnostics,
-                     credential commands. GUI, CLI and TUI share this layer.
-  modelmoor/         CLI entry point (subcommands; no arguments opens the TUI)
-Apps/
-  macOS/             Standalone package for the SwiftUI menu bar app, so the
-                     root package stays buildable and testable on Linux
-  TUI/               Shared TUI sources and a standalone modelmoor-tui
-                     compatibility package (TermKit pinned to a patched revision
-                     and SwiftTerm pinned to 1.20.0);
-                     TUIWidgets holds the terminal-independent snapshot
-                     renderer so tests run without a TTY
-Tests/
-  ModelMoorCoreTests/  Unit tests for Core + System
-  ModelMoorApplicationTests/  Session lifecycle, runtime-owner conflict,
-                     doctor layering/exit codes
-  ModelMoorGatewayTests/  Router and real loopback/SSE integration tests
-Scripts/
-  build-app.sh       App bundle assembly (actool + codesign)
-  check-layering.sh  Enforce Core/Application/Gateway/CLI/TUI boundaries
-  sync-localizations.sh  Generate/check SwiftPM sidecars from the String Catalog
-  check-localization-coverage.sh  Verify compiler-extracted GUI key coverage
-  test-cli-signal.py  Foreground runtime SIGTERM and cleanup contract
-  test-tui-terminal.py  PTY, resize, signal and terminal-restoration contract
-Support/
-  Info.plist         App bundle Info.plist
-Resources/
-  Assets.xcassets    App icon and asset catalog
-```
+User-facing setup and storage details live in the [user guide](usage.md); this page covers contributing and releasing.
 
-`ModelMoorCore` is a plain Swift package module shared by the app, CLI, and Gateway. Keep it free of AppKit/SwiftUI/Darwin/Glibc/Security/Network imports — platform capabilities belong in `ModelMoorSystem` behind `#if canImport(...)` shims. `ModelMoorGateway` is an in-process library rather than a daemon. It depends on `ModelMoorCore`, `ModelMoorSystem` for native subscription adapters and credential refresh, and SwiftNIO's `NIOCore`, `NIOPosix`, and `NIOHTTP1` products. `ModelMoorSystem` must not import Gateway or Application; Gateway must not import Application. UI and terminal imports remain forbidden in all three layers.
+## Build and test
 
-`make architecture-check` enforces these import boundaries before the root tests. It prefers `rg` and falls back to POSIX `grep`, so the same check runs in the minimal Ubuntu CI containers without adding a search-tool dependency. Keep Darwin/Glibc shims, signal handling, platform paths, secrets and other operating-system behavior in `ModelMoorSystem`; TermKit is linked only by the root `ModelMoorTUI` target and sources under `Apps/TUI`.
+macOS builds need macOS 14+, Xcode 26 / Swift 6.1+, system OpenSSH, and `librsvg` or Inkscape for icon generation. Install and accept the Xcode license before building. SwiftPM dependency downloads require network access.
 
-Business state changes only through `ModelMoorSession` commands (`load`, `saveConfiguration`, `removeTunnel/Endpoint/Mapping`, `startRuntime/stopRuntime`, `connectTunnel/disconnectTunnel`, native credential and subscription commands, temporary and saved endpoint inspection, coalesced SSH target discovery, current/historical usage reads, `refreshGateway`, `suspendRuntime/resumeRuntime`); presentation layers subscribe to secret-free `snapshots()`. Endpoint duplication and SSH Endpoint creation copy/store credentials transactionally with rollback, while explicit key-reveal commands return a value only to the invoking pasteboard action. Credential availability is projected as IDs only, so GUI rendering never synchronously calls Keychain and TUI can report missing keys without receiving secrets. GUI, `modelmoor run` and `modelmoor-tui` share one runtime owner lock (`RuntimeOwnership`, flock-based); native subscription credentials remain ModelMoor-owned and no CLIProxyAPI process is started.
+Use the Makefile so the Xcode toolchain, build backend, and caches are configured consistently. `make help` lists all targets.
 
-Presentation-independent interaction policy also lives in `ModelMoorApplication`: GUI and TUI prepare the same terminal-safe, localized multi-field search query once per filtering pass, share SSH command eligibility for tunnel phase, desired runtime identity, and enabled mappings, and use the same endpoint URL/refresh/duplication eligibility. The macOS sidebar builds its tunnel/mapping/endpoint relationship index once per relevant source revision. The TUI likewise caches configuration ID indexes so selection-only input does not scan the complete configuration, and it resolves clipboard targets before moving blocking platform clipboard work off the UI queue.
+| Task | Command |
+| --- | --- |
+| Build and open isolated development app | `make run` |
+| Build development / production bundle | `make app-dev` / `make app` |
+| Build CLI / standalone TUI | `make cli` / `make tui` |
+| Shared tests and architecture/signing gates | `make test` |
+| macOS / TUI package tests | `make test-app` / `make test-tui` |
+| Localization coverage | `make localization-check` |
+| All package and terminal integration tests | `make test-all` |
 
-The macOS app builds from `Apps/macOS` (`swift build --package-path Apps/macOS`); `modelmoor` launches the shared TUI when invoked without a subcommand, while `make tui` builds the standalone compatibility executable. `Scripts/build-app.sh` handles the app + CLI release assembly.
+App outputs are `.build/app-dev/ModelMoor Dev.app` and `.build/app/ModelMoor.app`, respectively. Build commands print executable paths. Development disables launch-at-login and update checks and uses separate configuration, secrets, history, runtime sockets, and ports. See the [profile paths](usage.md#configuration-and-credentials).
 
-## Linux Support
+Terminal integration tests exercise signals, resizing, shell commands, and terminal restoration. On macOS, `test-cli-signal` needs the production runtime lock to be free; configuration overrides do not isolate that lock. Do not stop a user's active runtime merely to run tests. Use a dedicated test account or arrange a maintenance window.
 
-The root package (Core/System/Gateway + `modelmoor` CLI) builds and tests on Ubuntu 22.04/24.04. Platform notes:
+## Architecture
 
-- Paths follow XDG: configuration stays at `~/.config/modelmoor` (or `$XDG_CONFIG_HOME`), data (usage, secrets) under `~/.local/share/modelmoor` (or `$XDG_DATA_HOME`), runtime locks under `$XDG_RUNTIME_DIR/modelmoor` with a `/tmp/modelmoor-<uid>` fallback.
-- Secrets: macOS defaults to the owner-only JSON file backend. On Linux there is no silent plaintext fallback: set `MODELMOOR_SECRET_BACKEND=file` to enable the existing XDG data-directory backend (optionally `MODELMOOR_SECRETS_FILE=/path`). Files use `0600`, containing directories use `0700`, and writes use an advisory file lock plus atomic replacement. The JSON envelope has `schemaVersion: 1` and a `secrets` dictionary. Values are plaintext; permissions do not protect against other processes running as the same user or administrators. Do not commit or share these files.
-- Network monitoring: the tunnel supervision loop relies on SSH retry/backoff; `NetworkMonitor` reports availability once and does not track link changes on Linux yet.
-- Configuration writes are serialized across processes with a blocking flock on `config.json.lock` and compare-and-swapped against a sidecar revision counter (`config.json.revision`); a stale writer gets `ConfigurationError.revisionConflict` instead of overwriting newer content. Both files are ignored by older versions, keeping the format rollback-safe.
+| Module | Responsibility |
+| --- | --- |
+| `ModelMoorCore` | Domain types, configuration validation/migration, routing data; Foundation only |
+| `ModelMoorSystem` | OpenSSH, POSIX files/locks, paths, secret storage, network and provider adapters |
+| `ModelMoorGateway` | In-process SwiftNIO listener, authentication, exact routing, streaming |
+| `ModelMoorApplication` | `ModelMoorSession` commands, secret-free snapshots, diagnostics and lifecycle |
+| `Sources/modelmoor` | CLI commands and default TUI entry point |
+| `Apps/macOS`, `Apps/TUI` | Native and terminal presentation; separate package tests |
 
-### Local Linux verification via Docker (Apple Silicon host)
+Business mutations go through `ModelMoorSession`; presentation code subscribes to `AppSnapshot` and owns drafts, focus, and clipboard actions. Credentials are exposed only through explicit commands, not snapshots. GUI, CLI runtime, and TUI share one owner lock. Configuration writes use a separate lock and revision check to reject stale writers.
 
-Docker Hub may be unreachable; the checked-in workflow uses a plain Ubuntu base plus the official Swift tarball. `Scripts/Dockerfile.linux-swift` covers 24.04 and `Scripts/Dockerfile.linux-swift-22.04` covers 22.04 (different gcc/libstdc++ generations):
+Core must not import platform, UI, or terminal frameworks. System must not import Gateway or Application; Gateway must not import Application. Keep platform shims in System. `make architecture-check` enforces these boundaries. The gateway remains an in-process library, with no separate daemon.
 
-```bash
-# One-time: download/extract the toolchain (kept out of git via .gitignore)
-curl -sL -o work/toolchains/swift-6.1.2-ubuntu24.04-aarch64.tar.gz \
-  https://download.swift.org/swift-6.1.2-release/ubuntu2404-aarch64/swift-6.1.2-RELEASE/swift-6.1.2-RELEASE-ubuntu24.04-aarch64.tar.gz
-tar xzf work/toolchains/swift-6.1.2-ubuntu24.04-aarch64.tar.gz -C work/toolchains
+Schema migration preserves legacy configuration and rejects unsupported future schemas. Keep rollback, credential isolation, SSH cleanup, JSON/SSE forwarding, cancellation, and existing CLI contracts covered when changing shared code. Product scope is summarized in [positioning.md](positioning.md).
 
-# One-time: base image with Swift runtime/build dependencies
-docker build -f Scripts/Dockerfile.linux-swift -t modelmoor-linux-base:24.04 Scripts
+## Build resources
 
-# Build + test (named volume caches the SwiftPM scratch dir across runs)
-docker run --rm --platform linux/arm64 \
-  -v "$PWD:/src:ro" \
-  -v "$PWD/work/toolchains/swift-6.1.2-RELEASE-ubuntu24.04-aarch64:/swift:ro" \
-  -v mm-linux-scratch:/tmp/scratch-root \
-  -w /src modelmoor-linux-base:24.04 \
-  /swift/usr/bin/swift test --scratch-path /tmp/scratch-root/main
-```
+`Scripts/build-app.sh` assembles the executable, `Support/Info.plist`, asset catalog, localizations, privacy manifest, and license notices. `Resources/Brand/ModelMoor-AppIcon-Master.svg` is the icon source; PNG sizes are generated as needed. CLIProxyAPI is not downloaded or bundled.
 
-For 22.04, substitute the `ubuntu2204-aarch64` tarball, `Scripts/Dockerfile.linux-swift-22.04` and a separate scratch volume (e.g. `mm-linux-scratch-2204`). For x86_64 verification, use the non-aarch64 tarballs and `--platform linux/amd64`.
+Local signing is ad-hoc by default, with no certificate lookup. `MODELMOOR_CODE_SIGN_IDENTITY` explicitly selects an alternative outer-app identity. Runtime credentials do not use Keychain; certificate signing may use its private key.
 
-As of 2026-08-23, the read-only ARM64 container matrix passes 114 root tests and 19 TUI tests on both Ubuntu 22.04 and 24.04, plus release builds of `modelmoor` and `modelmoor-tui`, the full TUI PTY contract, and the foreground CLI SIGTERM contract. The local verification images include Python/ncurses; the GitHub workflow installs the same runtime dependencies in its official Swift containers. Only a run for the exact revision under review counts as remote CI evidence.
+Builds currently use SwiftPM's `native` backend because the default backend produces duplicate localization-resource outputs. Although deprecated in Swift 6.4, it remains required here. Bundle builds accept `MODELMOOR_BUILD_SYSTEM`. After resolving dependencies manually, run `Scripts/patch-termkit-swiftpm.sh` to exclude SwiftTerm's optional Metal shader; CI and release scripts do this already.
 
-### Linux release artifacts
+Edit `Apps/macOS/Sources/ModelMoor/Resources/Localizable.xcstrings`, then run `Scripts/sync-localizations.sh`. The checked-in English and Simplified Chinese `.strings` sidecars support SwiftPM runtime loading. `make localization-check` verifies parity and compiler-extracted keys. Use `Text(verbatim:)` for technical values and user data.
 
-Pushing a version tag matching `v*` runs the release workflow on native Ubuntu x86_64 and aarch64 runners. Each Linux archive contains the release `modelmoor` CLI, `modelmoor-tui`, `LICENSE`, and `README.md`:
+## Linux and releases
 
-- `ModelMoor-vX.Y.Z-linux-x86_64.tar.gz`
-- `ModelMoor-vX.Y.Z-linux-aarch64.tar.gz`
+CI covers Ubuntu 22.04/24.04. The root package and TUI build without the macOS app. Linux uses XDG paths and explicit file-secret opt-in; network recovery relies on SSH retry rather than continuous link monitoring.
 
-Linux release executables are built on the Ubuntu 22.04 ABI baseline with `--static-swift-stdlib`, so the same archive runs on Ubuntu 22.04 and 24.04 without installing a Swift toolchain or copying `libswift*.so`, Foundation, Dispatch, or BlocksRuntime libraries beside the executables. The executables still dynamically link system libraries (including glibc, libcurl, and its TLS dependencies); release CI rejects missing dependencies and any accidental Swift runtime `.so` dependency with `Scripts/check-linux-release-dependencies.sh`.
+For local Linux checks, the dependency images are defined in `Scripts/Dockerfile.linux-swift` and `Scripts/Dockerfile.linux-swift-22.04`. Use the matching official Swift toolchain and a separate scratch directory for each OS/architecture. The executable CI commands in [.github/workflows](../.github/workflows) are the maintained build matrix; old test counts are not evidence for a new revision.
 
-The macOS archive is built in parallel; a final publish job creates one GitHub Release only after all three platform archives are available.
+The release workflow builds a macOS app ZIP and Linux x86_64/aarch64 archives, publishing only after all three are available. Linux builds use the Ubuntu 22.04 ABI baseline and static Swift standard libraries; system libraries remain dynamic. `Scripts/check-linux-release-dependencies.sh` checks those dependencies. See the workflow for current signing and artifact details rather than assuming notarization or universal binaries.
 
-## Testing
+Before release:
 
-```bash
-make test
-make localization-check
-swift test --package-path Apps/macOS
-swift test --package-path Apps/TUI
-python3 Scripts/test-tui-terminal.py "$(swift build --package-path Apps/TUI --show-bin-path)/modelmoor-tui"
-python3 Scripts/test-cli-signal.py "$(swift build -c release --show-bin-path)/modelmoor"
-```
-
-Tests cover schema migration and rollback, configuration validation, SSH lifecycle and ownership, endpoint URL/auth behavior, route validation, Unified API authentication and errors, ordinary JSON/error pass-through without retries, listener conflicts and release, client cancellation, upstream-reported usage extraction for JSON and SSE, indexed rolling windows, time buckets, route/endpoint filters, Session-owned managed-subscription lifecycle/login/cancellation/account mutation/usage/sleep recovery with fake helper and management adapters, ordered coordinator/revision filtering for cross-actor subscription snapshots, coalesced SSH target scans, temporary inspection isolation, ID-only credential availability, rollback-safe Endpoint duplication and SSH Endpoint creation, shared prepared search documents with field-boundary and control-character safety, linear macOS sidebar indexing with source/query cache invalidation, prepared-query performance, sidebar hidden-selection recovery without invalid controls, cached 10,000-row TUI filtering, filter/reorder/delete-safe TUI selection identity, phase/request/mapping-aware SSH and resolution/credential-aware endpoint TUI state, bounded trailing TUI refresh coalescing with reload-intent merging and cancellation, shared endpoint copy/refresh, subscription ownership and selected/batch SSH command eligibility across GUI and TUI surfaces, real AppKit window close behavior for dirty drafts, pre-mount and repeated native sidebar-search focus, keyboard navigation mappings, active-window refresh policy, authoritative String Catalog parity and compiler-extracted English/Simplified Chinese coverage, TUI snapshot and field-level invalidation, pane-scoped work policies, non-TTY success and failure exit contracts, small-terminal resize/signal/restoration, foreground CLI signal registration/cleanup, and a real loopback SSE stream that must deliver its first event before the upstream finishes.
-
-`CLIProxyAPI` is not fetched, bundled, or started by ModelMoor. Older configuration is migrated with the helper disabled, and current configuration validation rejects re-enabling it. ModelMoor retains old helper data without reading or deleting it. Native Codex uses ModelMoor-managed OAuth; Claude Code, Kimi Code, and Grok Build use isolated temporary profiles and do not require the helper. Antigravity subscription login is unsupported.
-
-## Software Updates
-
-The app checks `Kingfish404/ModelMoor` GitHub Releases. Release tags must be numeric versions such as `v0.2.0`, and the app bundle's `CFBundleShortVersionString` must match the corresponding version. If a release contains a `.dmg` or `.zip` asset whose name includes `ModelMoor`, the update action opens that asset directly; otherwise it opens the release page. Automatic checks are enabled by default and run every three hours while the app is open.
-
-## Configuration Schema
-
-The non-secret configuration files live at:
-
-```text
-~/.config/modelmoor/config.json
-~/.config/modelmoor/config.dev.json
-```
-
-For testing or automation, set `MODELMOOR_CONFIG=/path/to/config.json` to point the app or CLI at an alternate configuration file. The CLI uses the production filename by default.
-
-When the selected XDG file does not exist, ModelMoor copies the matching legacy file from `~/Library/Application Support/ModelMoor*/config.json`, then performs schema migration only on the new copy. The legacy file is never moved, overwritten, or deleted. If the XDG file already exists, it always wins.
-
-Schema v5 keeps SSH port mappings, API endpoints, public model routes, and Unified API settings separate. Schema v5 migrates older managed CLIProxyAPI endpoints to native subscription endpoints and removes the helper settings. Secrets are never serialized into ordinary configuration: endpoint keys use the endpoint UUID as their account in the separate secrets file. Unified API key metadata is stored in configuration, while each value uses its key UUID as a secret account. The default key retains the `gateway-client-token` account identifier in the secrets file; no Keychain migration occurs.
-
-Unified API usage history lives at `~/Library/Application Support/ModelMoor/token-usage.jsonl`. Each line contains only a timestamp, a total token count reported by an upstream response, and internal route/endpoint identifiers used by the Usage filters. Set `MODELMOOR_USAGE=/path/to/token-usage.jsonl` to isolate this file in tests or automation.
-
-## Release Documentation Checklist
-
-Wording is part of the product surface. A reader who files ModelMoor under "lightweight multi-provider gateway" will then read its deliberate boundaries as missing features, so the public text is reviewed by hand before any release that touches it.
-
-Review `README.md`, `docs/index.html`, `docs/dgx-spark-copilot.en.md`, `docs/dgx-spark-copilot.zh.md`, and the release notes, using `docs/positioning.md` and `docs/PLAN.md` as the internal baseline.
-
-**Naming and versions**
-
-- [ ] The local endpoint is called **Unified API** in every user-facing surface and in CLI and diagnostic messages; the retired name "Local Gateway" survives only in historical release notes.
-- [ ] Internal identifiers keep their names on purpose: the `ModelMoorGateway` target, the `gateway` configuration key, and the `modelmoor gateway …` commands. No document presents `gateway` as the product name, and renaming CLI commands is treated as a breaking change rather than a wording fix.
-- [ ] Any schema version quoted in docs equals `ModelMoorConfiguration.currentSchemaVersion` in `Sources/ModelMoorCore/Configuration.swift`.
-- [ ] Git tag, `Support/Info.plist` (`CFBundleShortVersionString`), artifact names, and release notes all state the same version.
-
-**Boundaries**
-
-- [ ] Loopback-only listening, single-user scope, no accounts, no telemetry, and no cloud account appear at least once on each public surface.
-- [ ] No text implies multi-tenant accounts, team sharing, balances, top-up, redemption codes, invoices, or cost allocation.
-- [ ] No text claims native Anthropic, Gemini, Realtime, or Rerank protocol support; subscription accounts are described as provider sign-ins reached through the managed helper, not as a Unified API capability.
-- [ ] No text promises fallback, load balancing, channel priority or weights, key rotation, or inference retries.
-
-**Budgets and usage**
-
-- [ ] Per-model budgets read as local estimates at configured prices with warnings only, never blocking requests or claiming provider quota, billing, accounting, spend cap, or invoice.
-- [ ] Usage claims repeat that only requests through this runtime are counted, that counting depends on upstream `usage` fields, and that these numbers are not additive with a gateway's or a provider's own accounting.
-
-**Feature status**
-
-- [ ] Every feature named on a public surface exists in the tagged revision, and removed or renamed features are gone from all surfaces, including screenshots and the HTML `meta` description.
-- [ ] The three core workflows in `README.md` match the shipped app and CLI, command names included.
-
-**Positioning**
-
-- [ ] The first screen still carries the differentiation line from `docs/positioning.md` §6.2 rather than the aggregation framing alone.
-- [ ] Any capability touching the listening, identity, or protocol boundary was recorded in `docs/positioning.md` before it entered a milestone.
-- [ ] Nothing tracked links to `docs/PLAN.md` or another git-ignored planning file, and the visibility of `docs/positioning.md` matches the links pointing at it.
+- Match the numeric Git tag, `Support/Info.plist` version/build values, and artifact names. The app's updater reads GitHub Releases; development builds disable it.
+- Run package tests, localization checks, terminal contracts, and release builds for the affected platforms on the candidate revision.
+- Verify upgrades preserve configuration, credentials, and history; test install/start/quit on a clean account.
+- Check keyboard, VoiceOver, unsaved-edit recovery, and English/Chinese layouts for changed macOS flows.
+- Keep the [README](../README.md), [site](index.html), [user guide](usage.md), and both DGX tutorials aligned with shipped behavior. Budgets are warnings, credentials are file-backed, and provider-specific subscription routes are not general protocol conversion.
