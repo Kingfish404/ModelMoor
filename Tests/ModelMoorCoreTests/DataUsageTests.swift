@@ -243,7 +243,7 @@ final class DataUsageTests: XCTestCase {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let relay = ForwardTrafficRelay()
         try await relay.start(port: 0, destinationHost: "", destinationPort: 0, inboundIsSent: false, socks: true, remotePolicy: denied)
-        let result = try await exchange(group: group, port: relay.port, payload: [5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1, 0, 80])
+        let result = try await exchange(group: group, port: relay.port, payload: [5, 1, 0, 5, 1, 0, 1, 127, 0, 0, 1, 0, 80], halfCloseOutput: false)
         XCTAssertEqual(result, [5, 0, 5, 2, 0, 1, 0, 0, 0, 0, 0, 0])
         await relay.stop()
         try await group.shutdownGracefully()
@@ -253,30 +253,30 @@ final class DataUsageTests: XCTestCase {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         let relay = ForwardTrafficRelay()
         try await relay.start(port: 0, destinationHost: "", destinationPort: 0, inboundIsSent: false, socks: true)
-        let authentication = try await exchange(group: group, port: relay.port, payload: [5, 1, 2])
+        let authentication = try await exchange(group: group, port: relay.port, payload: [5, 1, 2], halfCloseOutput: false)
         XCTAssertEqual(authentication, [5, 255])
-        let command = try await exchange(group: group, port: relay.port, payload: [5, 1, 0, 5, 3, 0, 1, 127, 0, 0, 1, 0, 80])
+        let command = try await exchange(group: group, port: relay.port, payload: [5, 1, 0, 5, 3, 0, 1, 127, 0, 0, 1, 0, 80], halfCloseOutput: false)
         XCTAssertEqual(command, [5, 0, 5, 7, 0, 1, 0, 0, 0, 0, 0, 0])
         await relay.stop()
         try await group.shutdownGracefully()
     }
 
-    private func exchange(group: EventLoopGroup, port: Int, payload: [UInt8], fragmented: Bool = false) async throws -> [UInt8] {
+    private func exchange(group: EventLoopGroup, port: Int, payload: [UInt8], fragmented: Bool = false, halfCloseOutput: Bool = true) async throws -> [UInt8] {
         let loop = group.next()
         let promise = loop.makePromise(of: [UInt8].self)
         let timeout = loop.scheduleTask(in: .seconds(10)) { promise.fail(TestFailure.timeout) }
         let client = try await ClientBootstrap(group: loop)
             .channelInitializer { channel in channel.pipeline.addHandler(CollectResponse(promise: promise)) }
             .connect(host: "127.0.0.1", port: port).get()
-        let chunkSize = fragmented ? 1 : payload.count
-        for offset in stride(from: 0, to: payload.count, by: chunkSize) {
-            var buffer = client.allocator.buffer(capacity: chunkSize)
-            buffer.writeBytes(payload[offset..<min(offset + chunkSize, payload.count)])
-            try await client.writeAndFlush(buffer).get()
-            if fragmented { try await Task.sleep(for: .milliseconds(2)) }
-        }
-        try await client.close(mode: .output).get()
         do {
+            let chunkSize = fragmented ? 1 : payload.count
+            for offset in stride(from: 0, to: payload.count, by: chunkSize) {
+                var buffer = client.allocator.buffer(capacity: chunkSize)
+                buffer.writeBytes(payload[offset..<min(offset + chunkSize, payload.count)])
+                try await client.writeAndFlush(buffer).get()
+                if fragmented { try await Task.sleep(for: .milliseconds(2)) }
+            }
+            if halfCloseOutput { try await client.close(mode: .output).get() }
             let result = try await promise.futureResult.get()
             timeout.cancel()
             try? await client.close().get()
